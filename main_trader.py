@@ -143,10 +143,19 @@ def main():
     parser.add_argument("--mock", action="store_true", help="모의투자(MOCK) 모드로 실행")
     parser.add_argument("--v6", action="store_true", help="v6.0 전체 시장 이벤트 탐지 엔진으로 실행")
     parser.add_argument("--legacy", action="store_true", help="레거시 단순 변동성 돌파 모드로 실행")
+    parser.add_argument("--web", action="store_true", help="웹 실시간 관제탑 대시보드(http://localhost:8080) 동시 실행")
     args = parser.parse_args()
 
     mode = "live" if args.live else "mock"
     act_no = config.ACCOUNT_LIVE if args.live else config.ACCOUNT_MOCK
+
+    if args.web:
+        try:
+            from web_dashboard import start_dashboard_server
+            start_dashboard_server(port=8080, open_browser=True)
+        except Exception as e:
+            print(f"[경고] 웹 대시보드 구동 실패 (독립 실행 가능: python web_dashboard.py): {e}")
+
 
     if args.legacy:
         # 레거시 모드
