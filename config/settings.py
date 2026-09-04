@@ -35,6 +35,11 @@ TARGET_STOCKS = {
     "068270": "셀트리온",
 }
 
+# 기본 손익절 및 투자한도 (main_trader 호환)
+STOP_LOSS_RATE = float(os.getenv("STOP_LOSS_RATE", -0.02))
+TAKE_PROFIT_RATE = float(os.getenv("TAKE_PROFIT_RATE", 0.04))
+MAX_INVEST_PER_STOCK = int(os.getenv("MAX_INVEST_PER_STOCK", 1000000))
+
 # 2. API 호출 제어 (Rate Limiter)
 API_MAX_REQUESTS_PER_SECOND = 4.0  # 초당 최대 요청수
 API_TIMEOUT_SECONDS = 10
