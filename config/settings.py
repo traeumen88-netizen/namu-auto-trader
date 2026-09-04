@@ -24,16 +24,29 @@ BASE_URL = TRADE_BASE_URL
 MODE_NAME = "실전투자 (LIVE)" if TRADING_MODE == "live" else "모의투자 (MOCK)"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
-TARGET_STOCKS = {
-    "005930": "삼성전자",
-    "000660": "SK하이닉스",
-    "373220": "LG에너지솔루션",
-    "207940": "삼성바이오로직스",
-    "005380": "현대차",
-    "035420": "NAVER",
-    "000270": "기아",
-    "068270": "셀트리온",
-}
+# 2. 감시/매매 대상 종목 유니버스 (INTRADAY + SWING v5.0 기준)
+# 모드 선택: 'top50' (기본: 주도주 50선), 'top100' (100선), 'top20' (20선), 'default8' (기본 8선), 'custom'
+UNIVERSE_MODE = os.getenv("UNIVERSE_MODE", "top50").lower().strip()
+
+try:
+    from universe.universe_scanner import UniverseScanner
+    UNIVERSE_METADATA = UniverseScanner.get_universe(UNIVERSE_MODE)
+    TARGET_STOCKS = UniverseScanner.get_universe_dict(UNIVERSE_MODE)
+    THEME_MAP = UniverseScanner.get_theme_map(UNIVERSE_MODE)
+except Exception:
+    TARGET_STOCKS = {
+        "005930": "삼성전자",
+        "000660": "SK하이닉스",
+        "373220": "LG에너지솔루션",
+        "207940": "삼성바이오로직스",
+        "005380": "현대차",
+        "035420": "NAVER",
+        "000270": "기아",
+        "068270": "셀트리온",
+    }
+    THEME_MAP = {k: "대형주" for k in TARGET_STOCKS}
+    UNIVERSE_METADATA = {k: {"name": v, "theme": "대형주", "market": "KOSPI"} for k, v in TARGET_STOCKS.items()}
+
 
 # 기본 손익절 및 투자한도 (main_trader 호환)
 STOP_LOSS_RATE = float(os.getenv("STOP_LOSS_RATE", -0.02))
@@ -99,16 +112,6 @@ TIME_INTRADAY_FORCE_CLOSE = "15:20:00"
 MAX_LOSS_COUNT_PER_STOCK = 3  # 동일 종목 3회 손절 시 당일 해당 종목 퇴출
 LOSS_COOLDOWN_SECONDS = 1800  # 2회 손절 시 30분 거래 중단
 
-# 10. 초기 Watchlist 후보군
-WATCHLIST_DEFAULTS = [
-    "005930",  # 삼성전자
-    "000660",  # SK하이닉스
-    "373220",  # LG에너지솔루션
-    "207940",  # 삼성바이오로직스
-    "005380",  # 현대차
-    "035420",  # NAVER
-    "000270",  # 기아
-    "068270",  # 셀트리온
-    "035720",  # 카카오
-    "105560",  # KB금융
-]
+# 10. 유니버스 감시 종목 리스트
+WATCHLIST_DEFAULTS = list(TARGET_STOCKS.keys())
+

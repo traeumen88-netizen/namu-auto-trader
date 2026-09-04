@@ -82,29 +82,43 @@ def run_cycle(client, strategy):
         print(f"[오류] 매도 주문 처리 실패: {e}")
 
     # 3. 관심 감시 종목 시세 조회 및 매수 조건 탐색
-    print(f"[관심 종목 매수 신호 탐색] ({len(config.TARGET_STOCKS)}개 종목 감시 중)")
-    for code, name in config.TARGET_STOCKS.items():
+    total_stocks = len(config.TARGET_STOCKS)
+    print(f"[관심 종목 매수 신호 탐색] ({total_stocks}개 종목 감시 중, 모드: {config.UNIVERSE_MODE.upper()})")
+    
+    breakout_count = 0
+    pending_count = 0
+
+    for idx, (code, name) in enumerate(config.TARGET_STOCKS.items(), start=1):
         try:
             curr = client.get_current_price(code)
             vol_target = strategy.calculate_volatility_target(code, k=0.5)
             target_price = vol_target['target_price'] if vol_target else 0
 
             status_mark = "대기"
-            if curr['price'] >= target_price and target_price > 0:
-                status_mark = "돌파완료"
+            is_breakout = False
+            if target_price > 0 and curr['price'] >= target_price:
+                status_mark = "⚡ 돌파완료"
+                is_breakout = True
+                breakout_count += 1
+            elif target_price > 0 and curr['price'] >= target_price * 0.985:
+                status_mark = "🔥 돌파임박"
+            else:
+                pending_count += 1
 
-            print(f"   · {name:10s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
+            # 콘솔 가독성을 위해 전체 또는 돌파/임박 종목 표시
+            print(f"   [{idx:02d}/{total_stocks}] {name:12s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
 
-            # 매수 시그널 점검
-            buy_signal = strategy.check_buy_signal(code, curr)
+            # 매수 시그널 점검 (캐시된 vol_target 재사용)
+            buy_signal = strategy.check_buy_signal(code, curr, v_info=vol_target)
             if buy_signal:
-                print(f"[매수 실행] {buy_signal['name']}({code}) {buy_signal['qty']}주 매수 주문 실행! (사유: {buy_signal['reason']})")
+                print(f"   ⚡⚡ [매수 실행] {buy_signal['name']}({code}) {buy_signal['qty']}주 매수 주문 실행! (사유: {buy_signal['reason']})")
                 res = client.buy_market(code, buy_signal['qty'])
-                print(f"   ㄴ 결과: {res.get('rsp_msg', '매수 접수 완료')}")
+                print(f"      ㄴ 주문 결과: {res.get('rsp_msg', '매수 접수 완료')}")
                 strategy.bought_today.add(code)
 
         except Exception as e:
-            print(f"   · {name}({code}) 분석 실패: {e}")
+            print(f"   [{idx:02d}/{total_stocks}] {name}({code}) 분석 스킵: {e}")
+
 
 
 def main():

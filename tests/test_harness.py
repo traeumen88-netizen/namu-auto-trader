@@ -385,6 +385,38 @@ class TestQuantHarness(unittest.TestCase):
         self.assertIn("train", wf_res)
         self.assertIn("out_of_sample", wf_res)
 
+    def test_13_universe_scanner(self):
+        """13. 유니버스 스캐너(Top 20/50/100, 테마 매핑, 수급 기준) 검증"""
+        from universe.universe_scanner import UniverseScanner
+
+        # 1. Top 50 유니버스 검증
+        u50 = UniverseScanner.get_universe("top50")
+        self.assertGreaterEqual(len(u50), 50)
+        self.assertIn("005930", u50)  # 삼성전자
+        self.assertEqual(u50["005930"]["theme"], "반도체")
+
+        # 2. Top 100 유니버스 검증
+        u100 = UniverseScanner.get_universe("top100")
+        self.assertGreaterEqual(len(u100), 100)
+
+        # 3. Top 20 유니버스 검증
+        u20 = UniverseScanner.get_universe("top20")
+        self.assertEqual(len(u20), 20)
+
+        # 4. 테마 매핑 검증 (Section 4 테마별 리스크 통제 연동)
+        theme_map = UniverseScanner.get_theme_map("top50")
+        self.assertEqual(theme_map["000660"], "반도체")
+        self.assertEqual(theme_map["373220"], "2차전지")
+        self.assertEqual(theme_map["207940"], "바이오")
+        self.assertEqual(theme_map["012450"], "방산")
+        self.assertEqual(theme_map["267260"], "전력설비")
+
+        # 5. 종목코드:종목명 딕셔너리 호환 검증
+        u_dict = UniverseScanner.get_universe_dict("top50")
+        self.assertEqual(u_dict["005930"], "삼성전자")
+        self.assertGreaterEqual(len(u_dict), 50)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

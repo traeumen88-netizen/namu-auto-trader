@@ -62,24 +62,35 @@ class LiveQuantTrader:
 
         # 종목별 전일 고가(PDH), 당일 OR_HIGH/OR_LOW 캐시
         self.stock_metrics = {
-            code: {"pdh": 0, "or_high": None, "or_low": None, "theme": "대형주"}
+            code: {
+                "pdh": 0,
+                "or_high": None,
+                "or_low": None,
+                "theme": settings.THEME_MAP.get(code, "대형주")
+            }
             for code in settings.WATCHLIST_DEFAULTS
         }
+
+        # 스윙용 일봉 데이터 캐시 (반복 API 호출 방지)
+        self.daily_candles_cache = {}
 
         # 초기 지수 및 일봉 데이터 사전 로딩
         self._init_premarket_data()
 
     def _init_premarket_data(self):
         """장전 데이터 사전 로딩: 전일 고가 및 일봉 캔들 로딩"""
-        print("[장전 데이터 로딩] 관심 종목 일자별 시세 및 전일 고가(PDH) 초기화 중...")
-        for code in settings.WATCHLIST_DEFAULTS:
+        total = len(settings.WATCHLIST_DEFAULTS)
+        print(f"[장전 데이터 로딩] 유니버스 {total}개 종목 일자별 시세 및 전일 고가(PDH) 초기화 중...")
+        for idx, code in enumerate(settings.WATCHLIST_DEFAULTS, start=1):
             try:
-                candles = self.client.get_daily_candles(code, count=10)
+                candles = self.client.get_daily_candles(code, count=65)
+                self.daily_candles_cache[code] = candles
                 if len(candles) >= 2:
                     yesterday = candles[1]
                     self.stock_metrics[code]["pdh"] = yesterday["high"]
-            except Exception as e:
+            except Exception:
                 pass
+
 
     def run_cycle(self):
         """실시간 모니터링 1회 순환 사이클"""
@@ -178,23 +189,32 @@ class LiveQuantTrader:
                     )
                     if s_mb: scanned_signals.append(s_mb)
 
-                # 스윙 전략 평가
+                # 스윙 전략 평가 (캐시된 일봉 데이터 활용)
                 if loss_eval["can_trade_swing"] and port_risk_status != "BLOCKED":
-                    daily_data = self.client.get_daily_candles(code, count=65)
-                    s_hh60 = HH60BreakoutStrategy.evaluate(
-                        code, name, daily_data, current_regime, now
-                    )
-                    if s_hh60: scanned_signals.append(s_hh60)
+                    daily_data = self.daily_candles_cache.get(code)
+                    if not daily_data:
+                        try:
+                            daily_data = self.client.get_daily_candles(code, count=65)
+                            self.daily_candles_cache[code] = daily_data
+                        except Exception:
+                            daily_data = []
 
-                    s_ma20 = MA20PullbackStrategy.evaluate(
-                        code, name, daily_data, current_regime, now
-                    )
-                    if s_ma20: scanned_signals.append(s_ma20)
+                    if daily_data:
+                        s_hh60 = HH60BreakoutStrategy.evaluate(
+                            code, name, daily_data, current_regime, now
+                        )
+                        if s_hh60: scanned_signals.append(s_hh60)
 
-                    s_ma60 = MA60PullbackStrategy.evaluate(
-                        code, name, daily_data, current_regime, now
-                    )
-                    if s_ma60: scanned_signals.append(s_ma60)
+                        s_ma20 = MA20PullbackStrategy.evaluate(
+                            code, name, daily_data, current_regime, now
+                        )
+                        if s_ma20: scanned_signals.append(s_ma20)
+
+                        s_ma60 = MA60PullbackStrategy.evaluate(
+                            code, name, daily_data, current_regime, now
+                        )
+                        if s_ma60: scanned_signals.append(s_ma60)
+
 
             except Exception as e:
                 pass

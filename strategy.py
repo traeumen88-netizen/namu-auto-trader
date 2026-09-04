@@ -15,6 +15,7 @@ class StrategyEngine:
     def __init__(self, client):
         self.client = client
         self.bought_today = set()  # 당일 이미 매수한 종목 (중복 매수 방지)
+        self.target_cache = {}     # {iem_cd: target_dict} 당일 변동성 돌파 목표가 캐시 (API 절약)
 
     def check_stop_loss_and_take_profit(self, holdings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
@@ -56,7 +57,11 @@ class StrategyEngine:
         """
         변동성 돌파 전략 목표 매수가 산출:
         목표가 = 당일 시가 + (전일 고가 - 전일 저가) * K
+        (장중 당일 목표가는 변하지 않으므로 캐시하여 API 과도 호출 방지)
         """
+        if iem_cd in self.target_cache:
+            return self.target_cache[iem_cd]
+
         candles = self.client.get_daily_candles(iem_cd, count=5)
         if len(candles) < 2:
             return None
@@ -68,7 +73,7 @@ class StrategyEngine:
         prev_range = yesterday["high"] - yesterday["low"]
         target_price = int(today["open"] + (prev_range * k))
 
-        return {
+        res = {
             "iem_cd": iem_cd,
             "today_open": today["open"],
             "prev_high": yesterday["high"],
@@ -77,15 +82,20 @@ class StrategyEngine:
             "target_price": target_price,
             "k": k
         }
+        if today["open"] > 0 and target_price > 0:
+            self.target_cache[iem_cd] = res
+        return res
 
-    def check_buy_signal(self, iem_cd: str, curr_price_info: Dict[str, Any]) -> Dict[str, Any]:
+    def check_buy_signal(self, iem_cd: str, curr_price_info: Dict[str, Any], v_info: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         매수 진입 조건 판별 (변동성 돌파 전략 기준)
         """
         if iem_cd in self.bought_today:
             return None  # 오늘 이미 매수 완료된 종목 건너뜀
 
-        v_info = self.calculate_volatility_target(iem_cd, k=0.5)
+        if v_info is None:
+            v_info = self.calculate_volatility_target(iem_cd, k=0.5)
+
         if not v_info:
             return None
 
