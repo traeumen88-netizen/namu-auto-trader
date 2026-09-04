@@ -11,8 +11,12 @@ __pycache__/
 # 로그 및 임시 파일
 *.log
 *.tmp
+*.db
 .token-*.json
 ~/.nhplug/
+data/
+models/
+
 
 # 가상환경
 .venv/

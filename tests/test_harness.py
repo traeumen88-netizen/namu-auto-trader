@@ -420,8 +420,12 @@ class TestQuantHarness(unittest.TestCase):
 # v6.0 전체 시장(2,670+종목) 이벤트 탐지형 검증 테스트 스위트 연동 (Section 70)
 from tests.test_v6_full_universe_harness import TestV6FullUniverseHarness
 
+# v7.0 자기학습형 AI 자동매매 시스템 검증 테스트 스위트 연동 (Section 97)
+from tests.test_v7_self_improving_ai_harness import TestV7SelfImprovingAIHarness
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 
 

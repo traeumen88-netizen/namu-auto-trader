@@ -138,26 +138,41 @@ def run_cycle(client, strategy):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="국내 주식 전체 종목 실시간 탐지형 퀀트 시스템 v6.0")
+    parser = argparse.ArgumentParser(description="국내 주식 자기학습형 AI 자동매매 시스템 v7.0")
     parser.add_argument("--live", action="store_true", help="실전투자(LIVE) 모드로 실행")
     parser.add_argument("--mock", action="store_true", help="모의투자(MOCK) 모드로 실행")
+    parser.add_argument("--v6", action="store_true", help="v6.0 전체 시장 이벤트 탐지 엔진으로 실행")
     parser.add_argument("--legacy", action="store_true", help="레거시 단순 변동성 돌파 모드로 실행")
     args = parser.parse_args()
 
     mode = "live" if args.live else "mock"
     act_no = config.ACCOUNT_LIVE if args.live else config.ACCOUNT_MOCK
 
-    if not args.legacy:
+    if args.legacy:
+        # 레거시 모드
+        client = NamuClient(mode=mode, act_no=act_no)
+        strategy = StrategyEngine(client)
+        print_banner(client)
+        run_cycle(client, strategy)
+        interval_seconds = 15
+        print(f"\n[안내] 실시간 장중 감시 모드로 진입합니다. ({interval_seconds}초 간격 순환)")
+        print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
+        try:
+            while True:
+                time.sleep(interval_seconds)
+                run_cycle(client, strategy)
+        except KeyboardInterrupt:
+            print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
+        return
+
+    if args.v6:
         # Full Market Universe Event-Driven Quant Engine v6.0 가동
         from execution.live_quant_trader import LiveQuantTrader
         trader = LiveQuantTrader(mode=mode, act_no=act_no)
-
         trader.run_cycle()
-
         interval = 15
-        print(f"\n[안내] 실시간 전체 시장(2,670+종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
+        print(f"\n[안내] 실시간 전체 시장(3,136종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
         print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
-
         try:
             while True:
                 time.sleep(interval)
@@ -165,6 +180,23 @@ def main():
         except KeyboardInterrupt:
             print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
         return
+
+    # 기본 모드: v7.0 Self-Improving Quant AI Engine 가동
+    from execution.ai_quant_trader import AIQuantTrader
+    client = NamuClient(mode=mode, act_no=act_no)
+    ai_trader = AIQuantTrader(namu_client=client, paper_trading=(mode == "mock"))
+    ai_trader.run_cycle()
+
+    interval = 15
+    print(f"\n[안내] 국내 주식 자기학습형 AI 자동매매 시스템 v7.0이 가동되었습니다. ({interval}초 주기)")
+    print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
+    try:
+        while True:
+            time.sleep(interval)
+            ai_trader.run_cycle()
+    except KeyboardInterrupt:
+        print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
+    return
 
     # 레거시 모드
     client = NamuClient(mode=mode, act_no=act_no)

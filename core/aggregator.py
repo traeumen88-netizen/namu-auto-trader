@@ -199,3 +199,9 @@ class CandleAggregator:
         elif timeframe == "15m":
             return self.candles_15m
         return self.candles_1m
+
+    def get_completed_candles(self, timeframe: str = "1m", limit: int = 60) -> List[Candle]:
+        """완성된 봉 리스트를 반환 (최근 N개 제한 가능)"""
+        history = self._get_history(timeframe)
+        return history[-limit:] if limit > 0 else history
+
