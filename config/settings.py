@@ -23,6 +23,7 @@ TRADE_BASE_URL = "https://api.nhplug.com:8443" if TRADING_MODE == "live" else "h
 BASE_URL = TRADE_BASE_URL
 MODE_NAME = "실전투자 (LIVE)" if TRADING_MODE == "live" else "모의투자 (MOCK)"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167"
 
 # 2. 감시/매매 대상 종목 유니버스 (FULL MARKET UNIVERSE v6.0 기준)
 # KOSPI + KOSDAQ 전체 상장종목(~2,670+개) 전수 로드 및 이벤트 감시

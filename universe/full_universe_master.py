@@ -8,6 +8,8 @@
 import os
 import json
 import logging
+import urllib.request
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from core.models import SymbolInfo, SymbolState
@@ -281,108 +283,120 @@ class FullUniverseMaster:
                     state=SymbolState.INACTIVE
                 )
 
-        # 전체 950개 KOSPI 규격 채우기 (연속 시퀀스 부여)
-        current_kospi_count = sum(1 for s in symbols.values() if s.market == "KOSPI")
-        target_kospi = 950
-        num = 2430
-        while current_kospi_count < target_kospi and num < 100000:
-            code_str = f"{num:06d}"
-            if code_str not in symbols:
-                symbols[code_str] = SymbolInfo(
-                    iem_cd=code_str,
-                    name=f"KOSPI_{code_str}",
-                    market="KOSPI",
-                    status="NORMAL",
-                    is_tradable=True,
-                    sector="제조/서비스",
-                    theme="일반",
-                    is_managed=False,
-                    is_halted=False,
-                    state=SymbolState.INACTIVE
-                )
-                current_kospi_count += 1
-            num += 10
-
-        # 3. KOSDAQ 유니버스 전수 생성 (1,720개 규격)
-        kosdaq_samples = [
-            ("000250", "삼천당제약", "제약"), ("000440", "중앙에너비스", "유통"),
-            ("001540", "안국약품", "제약"), ("001810", "무림SP", "제지"),
-            ("002230", "피에스텍", "전자부품"), ("002290", "삼일기업공사", "건설"),
-            ("002680", "사조오양", "음식료"), ("002820", "SUN&L", "목재"),
-            ("003010", "혜인", "기계"), ("003080", "성보화학", "농약"),
-            ("003120", "일성신약", "제약"), ("003310", "대봉엘에스", "바이오"),
-            ("003380", "하림지주", "지주"), ("003410", "쌍용C&E", "시멘트"),
-            ("003490", "대한항공", "항공"), ("003520", "영진약품", "제약"),
-            ("003530", "한화투자증권", "금융"), ("003540", "대신증권", "금융"),
-            ("003550", "LG", "지주"), ("003560", "IHQ", "엔터"),
-            ("003570", "SNT다이내믹스", "방산/자동차"), ("003580", "넥센", "지주"),
-            ("003610", "방림", "섬유"), ("003620", "KG스틸", "철강"),
-            ("003650", "미창석유", "화학"), ("003680", "진성티이씨", "건설기계"),
-            ("003690", "코리안리", "보험"), ("003720", "삼영화학", "전자부품"),
-            ("003780", "진양산업", "화학"), ("003830", "대한화섬", "섬유"),
-            ("003850", "보령", "제약"), ("003920", "남양유업", "음식료"),
-            ("003960", "사조대림", "음식료"), ("004000", "롯데정밀화학", "화학"),
-            ("004020", "현대제철", "철강"), ("004060", "SG세계물산", "의류"),
-            ("004080", "신흥", "의료기기"), ("004090", "한국석유", "석유/아스팔트"),
-            ("004100", "태양금속", "자동차볼트"), ("004140", "동방", "물류"),
-            ("004150", "한솔PNS", "IT/제지"), ("004170", "신세계", "유통"),
-            ("004200", "카페24", "플랫폼"), ("004250", "NPC", "플라스틱"),
-            ("004270", "남성", "전자"), ("004310", "현대약품", "제약"),
-            ("004360", "세방", "물류"), ("004370", "농심", "음식료"),
-            ("004380", "삼익THK", "자동화"), ("004410", "서울식품", "음식료"),
-            ("004430", "송원산업", "산화방지제"), ("004440", "삼일씨엔에스", "콘크리트"),
-            ("004450", "삼화왕관", "금속"), ("004490", "세방전지", "배터리"),
-            ("004540", "깨끗한나라", "제지"), ("004560", "현대비앤지스틸", "특수강"),
-            ("004690", "삼천리", "도시가스"), ("004700", "조광페인트", "도료"),
-            ("004710", "한솔테크닉스", "IT부품"), ("004720", "팜스코", "사료"),
-            ("004770", "동일고무벨트", "고무"), ("004800", "효성", "지주"),
-            ("004830", "덕성", "합성피혁"), ("004840", "DRB동일", "고무"),
-            ("004870", "티웨이홀딩스", "항공지주"), ("004890", "동일산업", "합금철"),
-            ("004910", "조광피혁", "피혁"), ("004920", "씨아이테크", "IT키오스크"),
-            ("004960", "한신공영", "건설"), ("004970", "신라교역", "수산"),
-            ("004980", "성신양회", "시멘트"), ("004990", "롯데지주", "지주"),
-        ]
-
-        for code, name, sector in kosdaq_samples:
+        # 2. KRX KIND 및 금융 포털로부터 실제 상장된 전 종목 수집 (더미 번호 생성 절대 배제)
+        online_stocks = cls._fetch_online_krx_stocks()
+        for code, info in online_stocks.items():
             if code not in symbols:
                 symbols[code] = SymbolInfo(
                     iem_cd=code,
-                    name=name,
-                    market="KOSDAQ",
-                    status="NORMAL",
-                    is_tradable=True,
-                    sector=sector,
-                    theme=sector,
-                    is_managed=False,
-                    is_halted=False,
+                    name=info.get("name", code),
+                    market=info.get("market", "KOSPI"),
+                    status=info.get("status", "NORMAL"),
+                    is_tradable=info.get("is_tradable", True),
+                    sector=info.get("sector", "기타"),
+                    theme=info.get("theme", "기타"),
+                    is_managed=info.get("is_managed", False),
+                    is_halted=info.get("is_halted", False),
                     state=SymbolState.INACTIVE
                 )
 
-        current_kosdaq_count = sum(1 for s in symbols.values() if s.market == "KOSDAQ")
-        target_kosdaq = 1720
-        num = 50000
-        while current_kosdaq_count < target_kosdaq and num < 500000:
-            code_str = f"{num:06d}"
-            if code_str not in symbols:
-                symbols[code_str] = SymbolInfo(
-                    iem_cd=code_str,
-                    name=f"KOSDAQ_{code_str}",
-                    market="KOSDAQ",
-                    status="NORMAL",
-                    is_tradable=True,
-                    sector="IT/바이오/벤처",
-                    theme="일반",
-                    is_managed=False,
-                    is_halted=False,
-                    state=SymbolState.INACTIVE
-                )
-                current_kosdaq_count += 1
-            num += 10
-
-        logger.info(f"KOSPI({sum(1 for s in symbols.values() if s.market == 'KOSPI')}) + "
-                    f"KOSDAQ({sum(1 for s in symbols.values() if s.market == 'KOSDAQ')}) "
-                    f"총 {len(symbols)}개 전체 상장 유니버스 마스터 생성 완료")
+        kospi_cnt = sum(1 for s in symbols.values() if s.market == "KOSPI")
+        kosdaq_cnt = sum(1 for s in symbols.values() if s.market == "KOSDAQ")
+        logger.info(f"실존 KRX 전체 상장 종목 로드 완료: KOSPI {kospi_cnt}개, KOSDAQ {kosdaq_cnt}개 (총 {len(symbols)}개)")
         return symbols
+
+    @classmethod
+    def _fetch_online_krx_stocks(cls) -> Dict[str, Dict[str, Any]]:
+        """KRX KIND 및 네이버 금융으로부터 실제 상장 전 종목 동적 수집"""
+        results: Dict[str, Dict[str, Any]] = {}
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+
+        # 1. KRX KIND 기업공시채널 전 종목 목록
+        try:
+            url_kind = 'http://kind.krx.co.kr/corpgeneral/corpList.do?method=download&searchType=13'
+            req_kind = urllib.request.Request(url_kind, headers=headers)
+            with urllib.request.urlopen(req_kind, timeout=12) as res:
+                raw = res.read().decode('cp949', errors='replace')
+            rows = re.findall(r'<tr[^>]*>(.*?)</tr>', raw, re.DOTALL)
+            for r in rows:
+                tds = re.findall(r'<td[^>]*>(.*?)</td>', r, re.DOTALL)
+                if len(tds) >= 4:
+                    name = re.sub(r'<[^>]+>', '', tds[0]).strip()
+                    market_raw = re.sub(r'<[^>]+>', '', tds[1]).strip()
+                    code = re.sub(r'<[^>]+>', '', tds[2]).strip()
+                    sector = re.sub(r'<[^>]+>', '', tds[3]).strip()
+                    if re.match(r'^\d{6}$', code):
+                        market = "KOSPI" if ("유가" in market_raw or "코스피" in market_raw) else ("KOSDAQ" if "코스닥" in market_raw else "KONEX")
+                        results[code] = {
+                            "name": name,
+                            "market": market,
+                            "status": "NORMAL",
+                            "is_tradable": True,
+                            "sector": sector or "기타",
+                            "theme": sector or "기타",
+                            "is_managed": False,
+                            "is_halted": False,
+                        }
+        except Exception as e:
+            logger.warning(f"KRX KIND 온라인 수집 실패: {e}")
+
+        # 2. 네이버 증권 KOSPI 전 종목 (우선주 포함) 보완
+        for page in range(1, 26):
+            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok=0&page={page}"
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    html = res.read().decode('cp949', errors='replace')
+                items = re.findall(r'href=\"/item/main\.naver\?code=(\d{6})\" class=\"tltle\">([^<]+)</a>', html)
+                if not items:
+                    break
+                for code, name in items:
+                    name = name.strip()
+                    if code not in results:
+                        results[code] = {
+                            "name": name,
+                            "market": "KOSPI",
+                            "status": "NORMAL",
+                            "is_tradable": True,
+                            "sector": "대형주/우선주",
+                            "theme": "KOSPI",
+                            "is_managed": False,
+                            "is_halted": False,
+                        }
+                    else:
+                        results[code]["market"] = "KOSPI"
+            except Exception:
+                break
+
+        # 3. 네이버 증권 KOSDAQ 전 종목 보완
+        for page in range(1, 38):
+            url = f"https://finance.naver.com/sise/sise_market_sum.naver?sosok=1&page={page}"
+            try:
+                req = urllib.request.Request(url, headers=headers)
+                with urllib.request.urlopen(req, timeout=5) as res:
+                    html = res.read().decode('cp949', errors='replace')
+                items = re.findall(r'href=\"/item/main\.naver\?code=(\d{6})\" class=\"tltle\">([^<]+)</a>', html)
+                if not items:
+                    break
+                for code, name in items:
+                    name = name.strip()
+                    if code not in results:
+                        results[code] = {
+                            "name": name,
+                            "market": "KOSDAQ",
+                            "status": "NORMAL",
+                            "is_tradable": True,
+                            "sector": "코스닥성장",
+                            "theme": "KOSDAQ",
+                            "is_managed": False,
+                            "is_halted": False,
+                        }
+                    elif results[code]["market"] != "KOSPI":
+                        results[code]["market"] = "KOSDAQ"
+            except Exception:
+                break
+
+        return results
 
     @classmethod
     def _save_master_cache(cls, symbols: Dict[str, SymbolInfo]):

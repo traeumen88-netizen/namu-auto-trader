@@ -28,6 +28,7 @@ else:
 os.environ["NHPLUG_APP_KEY"] = APP_KEY
 os.environ["NHPLUG_APP_SECRET"] = APP_SECRET
 os.environ["NHPLUG_BASE_URL"] = BASE_URL
+os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167"
 
 # 4. 리스크 관리 설정
 STOP_LOSS_RATE = float(os.getenv("STOP_LOSS_RATE", -0.02))      # 손절선 (예: -2%)

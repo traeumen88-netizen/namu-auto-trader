@@ -33,6 +33,7 @@ class NamuClient:
         os.environ["NHPLUG_APP_KEY"] = config.APP_KEY
         os.environ["NHPLUG_APP_SECRET"] = config.APP_SECRET
         os.environ["NHPLUG_BASE_URL"] = self.QUOTE_BASE_URL
+        os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167"
 
         # 토큰 사전 초기화
         self.token = nhplug.get_token()
@@ -51,6 +52,9 @@ class NamuClient:
                     wait_time = (attempt + 1) * 0.6
                     logger.warning(f"초당 호출 유량 제한 감지. {wait_time:.1f}초 대기 후 재시도... ({attempt+1}/{retries})")
                     time.sleep(wait_time)
+                elif "00200" in str(e) or "입력정보" in str(e):
+                    # 비즈니스 입력오류(미상장 종목코드 등)는 재시도 없이 즉시 상위로 전달
+                    raise e
                 else:
                     logger.error(f"API 호출 오류 ({path}): {e}")
                     raise e
@@ -65,46 +69,85 @@ class NamuClient:
         :param iem_cd: 종목코드 6자리 (예: 005930)
         :return: 종목 상세 시세 dict
         """
-        data = self._safe_call("/krstock/quote/v1/currentPrice", {"iem_cd": iem_cd, "market_cd": "KRX"}, self.QUOTE_BASE_URL)
-        out0 = data.get("Output_0", {})
-        out1 = data.get("Output_1", [])
-        
-        curr_price = out1[0].get("stck_prpr", 0) if out1 else out0.get("stck_prpr", 0)
-        prev_close = out0.get("stck_prdy_clpr", 0)
-        
-        return {
-            "iem_cd": iem_cd,
-            "name": config.TARGET_STOCKS.get(iem_cd, out0.get("iem_nm", iem_cd)),
-            "price": int(curr_price),
-            "prev_close": int(prev_close),
-            "open": int(out0.get("stck_oprc", curr_price)),
-            "high": int(out0.get("stck_hgpr", curr_price)),
-            "low": int(out0.get("stck_lwpr", curr_price)),
-            "rate": float(out0.get("prdy_ctrt", 0.0)),
-            "volume": int(out0.get("acml_vol", 0)),
-        }
+        iem_cd = str(iem_cd).strip()
+        if not iem_cd or len(iem_cd) != 6 or not iem_cd.isalnum():
+            return {
+                "iem_cd": iem_cd,
+                "name": config.TARGET_STOCKS.get(iem_cd, iem_cd),
+                "price": 0, "prev_close": 0, "open": 0, "high": 0, "low": 0,
+                "rate": 0.0, "volume": 0, "is_valid": False
+            }
+
+        try:
+            data = self._safe_call("/krstock/quote/v1/currentPrice", {"iem_cd": iem_cd, "market_cd": "KRX"}, self.QUOTE_BASE_URL)
+            out0 = data.get("Output_0", {})
+            out1 = data.get("Output_1", [])
+            
+            curr_price = out1[0].get("stck_prpr", 0) if out1 else out0.get("stck_prpr", 0)
+            prev_close = out0.get("stck_prdy_clpr", 0)
+            
+            return {
+                "iem_cd": iem_cd,
+                "name": config.TARGET_STOCKS.get(iem_cd, out0.get("iem_nm", iem_cd)),
+                "price": int(curr_price),
+                "prev_close": int(prev_close),
+                "open": int(out0.get("stck_oprc", curr_price)),
+                "high": int(out0.get("stck_hgpr", curr_price)),
+                "low": int(out0.get("stck_lwpr", curr_price)),
+                "rate": float(out0.get("prdy_ctrt", 0.0)),
+                "volume": int(out0.get("acml_vol", 0)),
+                "is_valid": True
+            }
+        except Exception as e:
+            if "00200" in str(e) or "입력정보" in str(e):
+                logger.warning(f"미상장 또는 시세 미제공 종목 제외 ({iem_cd})")
+            else:
+                logger.error(f"시세 조회 실패 ({iem_cd}): {e}")
+            return {
+                "iem_cd": iem_cd,
+                "name": config.TARGET_STOCKS.get(iem_cd, iem_cd),
+                "price": 0,
+                "prev_close": 0,
+                "open": 0,
+                "high": 0,
+                "low": 0,
+                "rate": 0.0,
+                "volume": 0,
+                "is_valid": False
+            }
 
     def get_daily_candles(self, iem_cd: str, count: int = 20) -> list[dict]:
         """
         일자별 시세 조회 (변동성 계산 및 이동평균선 산출용)
         """
-        data = self._safe_call("/krstock/quote/v1/currentDaily", {
-            "market_cd": "KRX",
-            "iem_cd": iem_cd,
-            "array_cnt": str(count),
-        }, self.QUOTE_BASE_URL)
-        candles = []
-        for row in data.get("Output_0", []):
-            candles.append({
-                "date": row.get("bsop_date"),
-                "open": int(row.get("stck_oprc", 0)),
-                "high": int(row.get("stck_hgpr", 0)),
-                "low": int(row.get("stck_lwpr", 0)),
-                "close": int(row.get("stck_clpr", 0)),
-                "volume": int(row.get("acml_vol", 0)),
-                "rate": float(row.get("prdy_ctrt", 0.0)),
-            })
-        return candles
+        iem_cd = str(iem_cd).strip()
+        if not iem_cd or len(iem_cd) != 6 or not iem_cd.isalnum():
+            return []
+
+        try:
+            data = self._safe_call("/krstock/quote/v1/currentDaily", {
+                "market_cd": "KRX",
+                "iem_cd": iem_cd,
+                "array_cnt": str(count),
+            }, self.QUOTE_BASE_URL)
+            candles = []
+            for row in data.get("Output_0", []):
+                candles.append({
+                    "date": row.get("bsop_date"),
+                    "open": int(row.get("stck_oprc", 0)),
+                    "high": int(row.get("stck_hgpr", 0)),
+                    "low": int(row.get("stck_lwpr", 0)),
+                    "close": int(row.get("stck_clpr", 0)),
+                    "volume": int(row.get("acml_vol", 0)),
+                    "rate": float(row.get("prdy_ctrt", 0.0)),
+                })
+            return candles
+        except Exception as e:
+            if "00200" in str(e) or "입력정보" in str(e):
+                logger.warning(f"일봉 미제공 종목 제외 ({iem_cd})")
+            else:
+                logger.error(f"일봉 조회 실패 ({iem_cd}): {e}")
+            return []
 
     def get_balance(self) -> dict:
         """

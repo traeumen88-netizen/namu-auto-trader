@@ -143,8 +143,10 @@ class LiveQuantTrader:
         for sym in active_symbols:
             try:
                 curr_info = self.client.get_current_price(sym.iem_cd)
+                if not curr_info or curr_info.get("price", 0) <= 0:
+                    continue
                 price = curr_info["price"]
-                volume = curr_info["volume"]
+                volume = curr_info.get("volume", 0)
 
                 # 틱 주입 및 이벤트 자동 감지/승격
                 self.scanner.on_market_tick(

@@ -105,6 +105,8 @@ def run_cycle(client, strategy):
     for idx, (code, name) in enumerate(current_batch, start=start_idx + 1):
         try:
             curr = client.get_current_price(code)
+            if not curr or curr.get("price", 0) <= 0:
+                continue
             vol_target = strategy.calculate_volatility_target(code, k=0.5)
             target_price = vol_target['target_price'] if vol_target else 0
 
