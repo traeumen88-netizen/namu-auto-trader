@@ -1,0 +1,21 @@
+# 보안 민감 설정 파일 (절대 Git에 커밋하지 않음)
+.env
+*.env
+
+# 파이썬 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# 로그 및 임시 파일
+*.log
+*.tmp
+.token-*.json
+~/.nhplug/
+
+# 가상환경
+.venv/
+env/
+venv/
+ENV/
