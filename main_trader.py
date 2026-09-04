@@ -154,7 +154,7 @@ def main():
         strategy = StrategyEngine(client)
         print_banner(client)
         run_cycle(client, strategy)
-        interval_seconds = 15
+        interval_seconds = 3
         print(f"\n[안내] 실시간 장중 감시 모드로 진입합니다. ({interval_seconds}초 간격 순환)")
         print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
         try:
@@ -170,7 +170,7 @@ def main():
         from execution.live_quant_trader import LiveQuantTrader
         trader = LiveQuantTrader(mode=mode, act_no=act_no)
         trader.run_cycle()
-        interval = 15
+        interval = 3
         print(f"\n[안내] 실시간 전체 시장(3,136종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
         print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
         try:
@@ -187,7 +187,7 @@ def main():
     ai_trader = AIQuantTrader(namu_client=client, paper_trading=(mode == "mock"))
     ai_trader.run_cycle()
 
-    interval = 15
+    interval = 3
     print(f"\n[안내] 국내 주식 자기학습형 AI 자동매매 시스템 v7.0이 가동되었습니다. ({interval}초 주기)")
     print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
     try:
@@ -198,25 +198,7 @@ def main():
         print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
     return
 
-    # 레거시 모드
-    client = NamuClient(mode=mode, act_no=act_no)
-    strategy = StrategyEngine(client)
-    
-    print_banner(client)
-    
-    run_cycle(client, strategy)
-
-    interval_seconds = 15
-    print(f"\n[안내] 실시간 장중 감시 모드로 진입합니다. ({interval_seconds}초 간격 순환)")
-    print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
-    
-    try:
-        while True:
-            time.sleep(interval_seconds)
-            run_cycle(client, strategy)
-    except KeyboardInterrupt:
-        print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
-
 
 if __name__ == "__main__":
     main()
+

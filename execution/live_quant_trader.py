@@ -312,8 +312,8 @@ def main():
     # 1회 즉시 실행
     trader.run_cycle()
 
-    interval = 15
-    print(f"\n[안내] 실시간 전체 시장(2,670+종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
+    interval = 3
+    print(f"\n[안내] 실시간 전체 시장(3,136종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
     print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
 
     try:
