@@ -67,27 +67,16 @@ class LiveQuantTrader:
         # 스윙용 일봉 데이터 캐시 {code: daily_candles}
         self.daily_candles_cache = {}
         self.or_high_map = {}
+        self._all_symbol_codes = list(self.full_universe.keys())
+        self._rolling_scan_index = 0
+        self._rolling_batch_size = 30  # 사이클당 순환 탐색 종목 수 (2,670+ 전 종목 연속 순환 탐색)
 
-        # 장전 주도 종목 기준가 초기화
+        # 장전 시세 및 일봉 캐시 준비
         self._init_premarket_data()
 
     def _init_premarket_data(self):
-        """장전 데이터 사전 로딩: 전일 고가 및 주요 종목 일봉 초기화"""
-        print("[장전 데이터 로딩] 시장 주요 주도종목 전일 시세 및 일봉 캐시 초기화...")
-        top_codes = ["005930", "000660", "373220", "207940", "005380", "035420", "000270", "068270", "196170", "012450"]
-        for code in top_codes:
-            sym = self.store.get(code)
-            if not sym:
-                continue
-            try:
-                candles = self.client.get_daily_candles(code, count=65)
-                self.daily_candles_cache[code] = candles
-                if len(candles) >= 2:
-                    sym.prev_high = candles[1]["high"]
-                    sym.prev_close = candles[1]["close"]
-                    sym.prev_low = candles[1]["low"]
-            except Exception:
-                pass
+        """장전 데이터 사전 로딩: 전일 시세 및 일봉 온디맨드 로딩 준비"""
+        print("[장전 데이터 로딩] 전체 시장(2,670+종목) 이벤트 기반 온디맨드 시세 및 일봉 캐시 준비 완료.")
 
     def run_cycle(self):
         """실시간 모니터링 1회 순환 사이클 (Full-Universe Event-Driven Engine)"""
@@ -124,22 +113,31 @@ class LiveQuantTrader:
         )
 
         # 5. 실시간 시장 시세 수신 및 이벤트 스캐닝 (Section 3, 5, 40)
-        # 활성(ACTIVE/SIGNAL/WATCH/POSITION) 후보 및 순환 탐색 종목 시세 수신
+        # 활성(ACTIVE/SIGNAL/WATCH/POSITION) 후보 및 시장 전체 순환 탐색 종목 시세 수신
         active_symbols = (
-            self.store.get_by_state(SymbolState.ACTIVE)
+            self.store.get_by_state(SymbolState.POSITION)
             + self.store.get_by_state(SymbolState.SIGNAL)
+            + self.store.get_by_state(SymbolState.ACTIVE)
             + self.store.get_by_state(SymbolState.WATCH)
-            + self.store.get_by_state(SymbolState.POSITION)
         )
 
-        # 활성 종목이 적을 경우 시장 핵심 감시 대상 20선 우선 탐색
-        if len(active_symbols) < 20:
-            core_codes = ["005930", "000660", "373220", "207940", "005380", "035420", "000270", "068270",
-                          "196170", "012450", "064350", "267260", "034020", "247540", "003230", "042700"]
-            for c in core_codes:
-                sym = self.store.get(c)
-                if sym and sym not in active_symbols:
-                    active_symbols.append(sym)
+        # 시장 전체 2,670+개 종목 대상 롤링 순환 탐색 (하드코딩 배제, 전 종목 연속 탐색)
+        existing_codes = {s.iem_cd for s in active_symbols}
+        n_total = len(self._all_symbol_codes)
+        if n_total > 0:
+            start_idx = self._rolling_scan_index
+            end_idx = (start_idx + self._rolling_batch_size) % n_total
+            if start_idx < end_idx:
+                batch_codes = self._all_symbol_codes[start_idx:end_idx]
+            else:
+                batch_codes = self._all_symbol_codes[start_idx:] + self._all_symbol_codes[:end_idx]
+            self._rolling_scan_index = end_idx
+
+            for c in batch_codes:
+                if c not in existing_codes:
+                    sym = self.store.get(c)
+                    if sym:
+                        active_symbols.append(sym)
 
         # 시세 주입 및 이벤트 실시간 평가
         for sym in active_symbols:
@@ -174,6 +172,21 @@ class LiveQuantTrader:
         # 6. 승격된 ACTIVE 종목 대상 전략 신호 생성 (11대 단타 + 9대 스윙)
         scanned_signals = []
         if loss_eval["can_trade_intraday"] and port_risk_status != "BLOCKED":
+            # 승격된 후보 중 일봉 캐시가 없는 종목은 온디맨드로 조회 및 캐싱
+            promoted_candidates = self.scanner.promotion_engine.get_promoted_candidates()
+            for cand in promoted_candidates:
+                if cand.iem_cd not in self.daily_candles_cache:
+                    try:
+                        candles = self.client.get_daily_candles(cand.iem_cd, count=65)
+                        if candles:
+                            self.daily_candles_cache[cand.iem_cd] = candles
+                            if len(candles) >= 2:
+                                cand.prev_high = candles[1]["high"]
+                                cand.prev_close = candles[1]["close"]
+                                cand.prev_low = candles[1]["low"]
+                    except Exception:
+                        pass
+
             scanned_signals = self.scanner.scan_active_signals(
                 regime=current_regime,
                 now=now,

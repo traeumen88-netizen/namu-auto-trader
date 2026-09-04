@@ -43,7 +43,10 @@ def format_money(val):
         return f"{val}원"
 
 
+_rolling_scan_idx = 0
+
 def run_cycle(client, strategy):
+    global _rolling_scan_idx
     now = datetime.datetime.now()
     time_str = now.strftime("%Y-%m-%d %H:%M:%S")
     
@@ -75,21 +78,31 @@ def run_cycle(client, strategy):
             print(f"⚡ [매도 실행] {order['name']}({order['iem_cd']}) {order['qty']}주 매도 주문 중... (사유: {order['reason']})")
             res = client.sell_market(order['iem_cd'], order['qty'])
             print(f"   ㄴ 결과: {res.get('rsp_msg', '주문 완료')}")
-            # 매도된 종목은 당일 매수 목록에서 해제
             if order['iem_cd'] in strategy.bought_today:
                 strategy.bought_today.remove(order['iem_cd'])
     except Exception as e:
         print(f"[오류] 매도 주문 처리 실패: {e}")
 
     # 3. 전체 시장 유니버스 기반 실시간 매수 조건 탐색 (Section 69: DISPLAY LIMIT != SCANNER LIMIT)
-    total_universe = len(config.TARGET_STOCKS)
-    print(f"\n[MARKET UNIVERSE] 전체 상장종목 실시간 감시 활성 (총 {total_universe}개 종목 스캔 중, 화면 표시: 상위 10선)")
+    stock_items = list(config.TARGET_STOCKS.items())
+    total_universe = len(stock_items)
+    batch_size = 25
+
+    start_idx = _rolling_scan_idx
+    end_idx = (start_idx + batch_size) % total_universe if total_universe > 0 else 0
+    if start_idx < end_idx:
+        current_batch = stock_items[start_idx:end_idx]
+    else:
+        current_batch = stock_items[start_idx:] + stock_items[:end_idx]
+    _rolling_scan_idx = end_idx
+
+    print(f"\n[MARKET UNIVERSE] 전체 상장종목 실시간 감시 활성 (총 {total_universe:,}개 종목 순환 스캔 중, 화면 표시: 상위 10선)")
     
     breakout_count = 0
     displayed_items = 0
     display_limit = 10
 
-    for idx, (code, name) in enumerate(config.TARGET_STOCKS.items(), start=1):
+    for idx, (code, name) in enumerate(current_batch, start=start_idx + 1):
         try:
             curr = client.get_current_price(code)
             vol_target = strategy.calculate_volatility_target(code, k=0.5)
@@ -106,7 +119,7 @@ def run_cycle(client, strategy):
 
             # 화면에는 상위 10개 및 돌파/임박 종목 우선 표출 (Section 69 준수)
             if is_breakout or "돌파임박" in status_mark or displayed_items < display_limit:
-                print(f"   [{idx:02d}/{total_universe}] {name:12s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
+                print(f"   [{idx:04d}/{total_universe:,}] {name:12s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
                 displayed_items += 1
 
             # 매수 시그널 점검: 화면 표시 여부와 무관하게 전체 시장 전수 점검 (Section 70 Test 7 준수)
@@ -117,40 +130,48 @@ def run_cycle(client, strategy):
                 print(f"      ㄴ 주문 결과: {res.get('rsp_msg', '매수 접수 완료')}")
                 strategy.bought_today.add(code)
 
-        except Exception as e:
+        except Exception:
             pass
-
-
 
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser(description="나무증권 자동매매 시스템")
+    parser = argparse.ArgumentParser(description="국내 주식 전체 종목 실시간 탐지형 퀀트 시스템 v6.0")
     parser.add_argument("--live", action="store_true", help="실전투자(LIVE) 모드로 실행")
     parser.add_argument("--mock", action="store_true", help="모의투자(MOCK) 모드로 실행")
+    parser.add_argument("--legacy", action="store_true", help="레거시 단순 변동성 돌파 모드로 실행")
     args = parser.parse_args()
 
-    # 인자 우선 적용
-    mode = None
-    act_no = None
-    if args.live:
-        mode = "live"
-        act_no = config.ACCOUNT_LIVE
-        config.MODE_NAME = "실전투자 (LIVE)"
-    elif args.mock:
-        mode = "mock"
-        act_no = config.ACCOUNT_MOCK
-        config.MODE_NAME = "모의투자 (MOCK)"
+    mode = "live" if args.live else "mock"
+    act_no = config.ACCOUNT_LIVE if args.live else config.ACCOUNT_MOCK
 
+    if not args.legacy:
+        # Full Market Universe Event-Driven Quant Engine v6.0 가동
+        from execution.live_quant_trader import LiveQuantTrader
+        trader = LiveQuantTrader(mode=mode, act_no=act_no)
+
+        trader.run_cycle()
+
+        interval = 15
+        print(f"\n[안내] 실시간 전체 시장(2,670+종목) 이벤트 탐지 엔진이 가동되었습니다. ({interval}초 주기)")
+        print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")
+
+        try:
+            while True:
+                time.sleep(interval)
+                trader.run_cycle()
+        except KeyboardInterrupt:
+            print("\n\n사용자에 의해 자동매매 시스템이 안전하게 종료되었습니다.")
+        return
+
+    # 레거시 모드
     client = NamuClient(mode=mode, act_no=act_no)
     strategy = StrategyEngine(client)
     
     print_banner(client)
     
-    # 1회 즉시 실행
     run_cycle(client, strategy)
 
-    # 반복 주기 안내
     interval_seconds = 15
     print(f"\n[안내] 실시간 장중 감시 모드로 진입합니다. ({interval_seconds}초 간격 순환)")
     print("시스템을 종료하려면 Ctrl+C 를 누르세요.\n")

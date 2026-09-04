@@ -204,15 +204,26 @@ class UniverseScanner:
     CUSTOM_FILE = Path(__file__).resolve().parent.parent / "config" / "custom_universe.json"
 
     @classmethod
-    def get_universe(cls, mode: str = "top50") -> Dict[str, Dict[str, str]]:
+    def get_universe(cls, mode: str = "full") -> Dict[str, Dict[str, str]]:
         """
         모드별 유니버스 딕셔너리 반환
-        :param mode: 'top20' | 'top50' | 'top100' | 'custom' | 'default8'
+        :param mode: 'full' (전체 상장 2,670+종목) | 'top20' | 'top50' | 'top100' | 'custom'
         :return: {iem_cd: {"name": ..., "theme": ..., "market": ...}}
         """
-        mode = (mode or "top50").lower().strip()
+        mode = (mode or "full").lower().strip()
         
-        if mode == "top20":
+        if mode in ("full", "all", "market"):
+            try:
+                from universe.full_universe_master import FullUniverseMaster
+                full_m = FullUniverseMaster.load_full_universe()
+                return {
+                    code: {"name": s.name, "theme": s.theme, "market": s.market}
+                    for code, s in full_m.items()
+                }
+            except Exception as e:
+                logger.warning(f"전체 유니버스 로드 실패, TOP50 대체: {e}")
+                return UNIVERSE_TOP50
+        elif mode == "top20":
             return UNIVERSE_TOP20
         elif mode == "top100":
             return UNIVERSE_TOP100
@@ -222,20 +233,19 @@ class UniverseScanner:
             custom_data = cls.load_custom_universe()
             return custom_data if custom_data else UNIVERSE_TOP50
         elif mode in ("default8", "8"):
-            # 초기 8개 기본값
-            keys = ["005930", "000660", "373220", "207940", "005380", "035420", "000270", "068270"]
-            return {k: UNIVERSE_TOP50[k] for k in keys if k in UNIVERSE_TOP50}
+            logger.info("8종목 고정 모드는 폐지되어 FULL MARKET UNIVERSE(2,670+종목)로 자동 전환됩니다.")
+            return cls.get_universe("full")
         
-        return UNIVERSE_TOP50
+        return cls.get_universe("full")
 
     @classmethod
-    def get_universe_dict(cls, mode: str = "top50") -> Dict[str, str]:
+    def get_universe_dict(cls, mode: str = "full") -> Dict[str, str]:
         """기존 코드(config.TARGET_STOCKS 등) 호환용 {종목코드: 종목명} 반환"""
         u = cls.get_universe(mode)
         return {code: info["name"] for code, info in u.items()}
 
     @classmethod
-    def get_theme_map(cls, mode: str = "top50") -> Dict[str, str]:
+    def get_theme_map(cls, mode: str = "full") -> Dict[str, str]:
         """포트폴리오 리스크 엔진 연동용 {종목코드: 테마} 맵 반환"""
         u = cls.get_universe(mode)
         return {code: info["theme"] for code, info in u.items()}

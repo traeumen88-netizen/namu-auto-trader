@@ -35,22 +35,16 @@ TAKE_PROFIT_RATE = float(os.getenv("TAKE_PROFIT_RATE", 0.04))   # 익절선 (예
 MAX_INVEST_PER_STOCK = int(os.getenv("MAX_INVEST_PER_STOCK", 500000)) # 종목당 최대 매수금
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
-# 5. 감시/매매 대상 종목 유니버스 (INTRADAY + SWING v5.0 기준)
-# 모드 선택: 'top50' (기본: 주도주 50선), 'top100' (100선), 'top20' (20선), 'default8' (기본 8선), 'custom'
-UNIVERSE_MODE = os.getenv("UNIVERSE_MODE", "top50").lower().strip()
+# 5. 대한민국 KOSPI + KOSDAQ 전체 상장 유니버스 (FULL MARKET UNIVERSE v6.0)
+# 8개, 10개, 20개 등 특정 종목 고정/하드코딩 배제 -> 2,670+ 전 종목 로드
+UNIVERSE_MODE = os.getenv("UNIVERSE_MODE", "full").lower().strip()
 
 try:
+    from universe.full_universe_master import FullUniverseMaster
+    _full_universe = FullUniverseMaster.load_full_universe()
+    TARGET_STOCKS = {code: sym.name for code, sym in _full_universe.items()}
+except Exception:
     from universe.universe_scanner import UniverseScanner
     TARGET_STOCKS = UniverseScanner.get_universe_dict(UNIVERSE_MODE)
-except Exception:
-    TARGET_STOCKS = {
-        "005930": "삼성전자",
-        "000660": "SK하이닉스",
-        "373220": "LG에너지솔루션",
-        "207940": "삼성바이오로직스",
-        "005380": "현대차",
-        "035420": "NAVER",
-        "000270": "기아",
-        "068270": "셀트리온",
-    }
+
 

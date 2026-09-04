@@ -24,28 +24,24 @@ BASE_URL = TRADE_BASE_URL
 MODE_NAME = "실전투자 (LIVE)" if TRADING_MODE == "live" else "모의투자 (MOCK)"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
 
-# 2. 감시/매매 대상 종목 유니버스 (INTRADAY + SWING v5.0 기준)
-# 모드 선택: 'top50' (기본: 주도주 50선), 'top100' (100선), 'top20' (20선), 'default8' (기본 8선), 'custom'
-UNIVERSE_MODE = os.getenv("UNIVERSE_MODE", "top50").lower().strip()
+# 2. 감시/매매 대상 종목 유니버스 (FULL MARKET UNIVERSE v6.0 기준)
+# KOSPI + KOSDAQ 전체 상장종목(~2,670+개) 전수 로드 및 이벤트 감시
+UNIVERSE_MODE = os.getenv("UNIVERSE_MODE", "full").lower().strip()
 
 try:
+    from universe.full_universe_master import FullUniverseMaster
+    FULL_UNIVERSE = FullUniverseMaster.load_full_universe()
+    TARGET_STOCKS = {code: s.name for code, s in FULL_UNIVERSE.items()}
+    THEME_MAP = {code: s.theme for code, s in FULL_UNIVERSE.items()}
+    UNIVERSE_METADATA = {
+        code: {"name": s.name, "theme": s.theme, "market": s.market}
+        for code, s in FULL_UNIVERSE.items()
+    }
+except Exception:
     from universe.universe_scanner import UniverseScanner
     UNIVERSE_METADATA = UniverseScanner.get_universe(UNIVERSE_MODE)
     TARGET_STOCKS = UniverseScanner.get_universe_dict(UNIVERSE_MODE)
     THEME_MAP = UniverseScanner.get_theme_map(UNIVERSE_MODE)
-except Exception:
-    TARGET_STOCKS = {
-        "005930": "삼성전자",
-        "000660": "SK하이닉스",
-        "373220": "LG에너지솔루션",
-        "207940": "삼성바이오로직스",
-        "005380": "현대차",
-        "035420": "NAVER",
-        "000270": "기아",
-        "068270": "셀트리온",
-    }
-    THEME_MAP = {k: "대형주" for k in TARGET_STOCKS}
-    UNIVERSE_METADATA = {k: {"name": v, "theme": "대형주", "market": "KOSPI"} for k, v in TARGET_STOCKS.items()}
 
 
 # 기본 손익절 및 투자한도 (main_trader 호환)
