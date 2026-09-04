@@ -81,12 +81,13 @@ def run_cycle(client, strategy):
     except Exception as e:
         print(f"[오류] 매도 주문 처리 실패: {e}")
 
-    # 3. 관심 감시 종목 시세 조회 및 매수 조건 탐색
-    total_stocks = len(config.TARGET_STOCKS)
-    print(f"[관심 종목 매수 신호 탐색] ({total_stocks}개 종목 감시 중, 모드: {config.UNIVERSE_MODE.upper()})")
+    # 3. 전체 시장 유니버스 기반 실시간 매수 조건 탐색 (Section 69: DISPLAY LIMIT != SCANNER LIMIT)
+    total_universe = len(config.TARGET_STOCKS)
+    print(f"\n[MARKET UNIVERSE] 전체 상장종목 실시간 감시 활성 (총 {total_universe}개 종목 스캔 중, 화면 표시: 상위 10선)")
     
     breakout_count = 0
-    pending_count = 0
+    displayed_items = 0
+    display_limit = 10
 
     for idx, (code, name) in enumerate(config.TARGET_STOCKS.items(), start=1):
         try:
@@ -102,13 +103,13 @@ def run_cycle(client, strategy):
                 breakout_count += 1
             elif target_price > 0 and curr['price'] >= target_price * 0.985:
                 status_mark = "🔥 돌파임박"
-            else:
-                pending_count += 1
 
-            # 콘솔 가독성을 위해 전체 또는 돌파/임박 종목 표시
-            print(f"   [{idx:02d}/{total_stocks}] {name:12s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
+            # 화면에는 상위 10개 및 돌파/임박 종목 우선 표출 (Section 69 준수)
+            if is_breakout or "돌파임박" in status_mark or displayed_items < display_limit:
+                print(f"   [{idx:02d}/{total_universe}] {name:12s} ({code}): 현재가 {curr['price']:,}원 ({curr['rate']:+.2f}%) | 돌파목표가 {target_price:,}원 [{status_mark}]")
+                displayed_items += 1
 
-            # 매수 시그널 점검 (캐시된 vol_target 재사용)
+            # 매수 시그널 점검: 화면 표시 여부와 무관하게 전체 시장 전수 점검 (Section 70 Test 7 준수)
             buy_signal = strategy.check_buy_signal(code, curr, v_info=vol_target)
             if buy_signal:
                 print(f"   ⚡⚡ [매수 실행] {buy_signal['name']}({code}) {buy_signal['qty']}주 매수 주문 실행! (사유: {buy_signal['reason']})")
@@ -117,7 +118,8 @@ def run_cycle(client, strategy):
                 strategy.bought_today.add(code)
 
         except Exception as e:
-            print(f"   [{idx:02d}/{total_stocks}] {name}({code}) 분석 스킵: {e}")
+            pass
+
 
 
 

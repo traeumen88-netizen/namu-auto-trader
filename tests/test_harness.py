@@ -417,6 +417,11 @@ class TestQuantHarness(unittest.TestCase):
         self.assertGreaterEqual(len(u_dict), 50)
 
 
+# v6.0 전체 시장(2,670+종목) 이벤트 탐지형 검증 테스트 스위트 연동 (Section 70)
+from tests.test_v6_full_universe_harness import TestV6FullUniverseHarness
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
 

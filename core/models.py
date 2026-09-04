@@ -40,8 +40,86 @@ class MarketRegime(str, Enum):
     PANIC = "PANIC"
 
 
+class SymbolState(str, Enum):
+    """전체 유니버스 종목 상태 머신 (Section 4)"""
+    INACTIVE = "INACTIVE"   # 이상 이벤트 없음 (기본 저비용 감시)
+    WATCH = "WATCH"         # 관심 이벤트 감지 (이벤트 점수 50~64)
+    ACTIVE = "ACTIVE"       # 실시간 정밀 분석 승격 (이벤트 점수 65 이상)
+    SIGNAL = "SIGNAL"       # 매매 조건 충족 후보
+    POSITION = "POSITION"   # 실제 포지션 보유
+    COOLDOWN = "COOLDOWN"   # 손절/실패 후 일시 거래 제한
+
+
+class CandidatePriority(str, Enum):
+    PRIORITY_1 = "ACTIVE PRIORITY 1"  # 80점 이상
+    PRIORITY_2 = "ACTIVE PRIORITY 2"  # 65~79점
+    WATCH = "WATCH"                   # 50~64점
+    INACTIVE = "INACTIVE"             # 49점 이하
+
+
+class MarketEventType(str, Enum):
+    """Section 5 장중 Dynamic Discovery 15대 이벤트 (Events A ~ O)"""
+    EVENT_A = "VOL_SURGE_3X"          # 최근 1분 거래량 >= 평균 * 3
+    EVENT_B = "RETURN_3M_2PCT"        # 최근 3분 수익률 >= +2.0%
+    EVENT_C = "RETURN_5M_3PCT"        # 최근 5분 수익률 >= +3.0%
+    EVENT_D = "TURNOVER_SURGE_3X"     # 최근 1분 거래대금 >= 20개 평균 * 3
+    EVENT_E = "NEW_DAY_HIGH"          # 현재가 >= 당일 고가
+    EVENT_F = "PDH_BREAKOUT"          # 현재가 > 전일 고가
+    EVENT_G = "HIGH_20BAR_BREAKOUT"   # 현재가 > 최근 20개 1분봉 최고가
+    EVENT_H = "VWAP_BREAKOUT"         # VWAP 상향 돌파
+    EVENT_I = "EMA_GOLDEN_CROSS"      # EMA9 > EMA20 골든크로스
+    EVENT_J = "EXECUTION_INTENSITY"   # 체결강도 >= 120
+    EVENT_K = "ORDERBOOK_IMBALANCE"   # 호가 불균형 OBI >= +0.25
+    EVENT_L = "NEWS_EVENT"            # 뉴스/공시 이벤트
+    EVENT_M = "RANK_SURGE"            # 거래대금 순위 급상승
+    EVENT_N = "ATR_EXPANSION"         # 5분 ATR 급증
+    EVENT_O = "VOLATILITY_BURST"      # 가격 변동성 급증
+
+
+@dataclass
+class SymbolInfo:
+    """전체 상장 유니버스 종목 마스터 정보 (Section 1)"""
+    iem_cd: str
+    name: str
+    market: str  # "KOSPI" | "KOSDAQ"
+    status: str = "NORMAL"  # "NORMAL", "MANAGED", "HALTED"
+    is_tradable: bool = True
+    price: int = 0
+    prev_close: int = 0
+    prev_high: int = 0
+    prev_low: int = 0
+    open_price: int = 0
+    high_price: int = 0
+    low_price: int = 0
+    acml_vol: int = 0
+    acml_trde_amt: int = 0
+    sector: str = "기타"
+    theme: str = "기타"
+    is_managed: bool = False
+    is_halted: bool = False
+    state: SymbolState = SymbolState.INACTIVE
+    event_score: float = 0.0
+    active_events: List[str] = field(default_factory=list)
+    last_event_time: Optional[datetime] = None
+    cooldown_until: Optional[datetime] = None
+    loss_count_today: int = 0
+
+
+@dataclass
+class MarketEvent:
+    """감지된 실시간 시장 이벤트"""
+    event_type: MarketEventType
+    iem_cd: str
+    name: str
+    timestamp: datetime
+    description: str
+    score_delta: float
+    metrics: Dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class Tick:
+
     timestamp: datetime
     iem_cd: str
     price: int

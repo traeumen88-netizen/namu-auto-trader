@@ -109,7 +109,12 @@ class CandleAggregator:
     # 기술적 보조지표 계산 함수군 (Look-Ahead Bias 방지: 완성된 봉만 사용)
     # =========================================================================
 
+    def calculate_vwap(self, timeframe: str = "1m") -> float:
+        """당일 거래대금 가중평균가(VWAP) 반환"""
+        return self.vwap
+
     def calculate_ema(self, timeframe: str, period: int) -> float:
+
         """완성된 봉 기준 지수이동평균(EMA) 계산"""
         history = self._get_history(timeframe)
         if len(history) < period:
