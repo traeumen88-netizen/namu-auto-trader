@@ -1,0 +1,30 @@
+﻿Metric,Value
+data_source,SYNTHETIC
+overall_validity,INVALID
+admission_decision,BACKTEST PERFORMANCE BLOCKED
+evaluation_notice,NOT FOR STRATEGY EVALUATION
+synthetic_warning,WARNING: This dataset is synthetic/fixture data. Performance metrics MUST NOT be interpreted as historical strategy performance.
+initial_capital,100000000.0
+final_equity,114886669.17
+total_net_pnl,14886669.17
+total_return_pct,14.89
+total_trades,108
+total_round_trips,57
+win_rate,67.59
+profit_factor,2.49
+expectancy_r,0.482
+average_r,2.166
+outlier_count,1
+average_win,341000.22
+average_loss,285895.62
+payoff_ratio,1.19
+max_drawdown_pct,4.9
+sharpe_ratio,65.75
+sortino_ratio,140.28
+calmar_ratio,3.04
+average_holding_minutes,65.0
+median_holding_minutes,35.0
+total_fees,681678.9
+total_tax,4107781.93
+total_slippage,675117.0
+no_trade_count,17791

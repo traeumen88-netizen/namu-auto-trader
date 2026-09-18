@@ -1,0 +1,170 @@
+{
+  "data_source": "SYNTHETIC",
+  "overall_validity": "INVALID",
+  "admission_decision": "BACKTEST PERFORMANCE BLOCKED",
+  "evaluation_notice": "NOT FOR STRATEGY EVALUATION",
+  "synthetic_warning": "WARNING: This dataset is synthetic/fixture data. Performance metrics MUST NOT be interpreted as historical strategy performance.",
+  "validity_checklist": {
+    "Data Source Authenticity": "[FAIL] SYNTHETIC_FIXTURE (Historical parquet required)",
+    "Temporal/PIT Integrity": "[FAIL] TIMING_INVERSION (Model fit >= OOS start)",
+    "Live Decision Core Parity": "[PASS] Exact Same Multi-Stage Pipeline & Thresholds",
+    "Live Execution Core Parity": "[PASS] Exact Same Fee (0.015%), Tax (0.18%), Slippage",
+    "Slippage Accounting Direction": "[PASS] Gross = Benchmark + Slippage Adj (Sign Verified)",
+    "Portfolio Equity Reconciliation": "[PASS] Equity == Initial + Realized + Unrealized (Diff: 0.00 KRW)",
+    "Trade-to-Portfolio Sum Match": "[PASS] Sum(Trade Net) == Portfolio Realized (Diff: 0.00 KRW)",
+    "EOD Intraday Overnight Position": "[PASS] 0 Positions Held Overnight (Session 09:00-15:30)",
+    "Outlier R Distribution Control": "[FAIL] 1 Outliers (|R| > 10.0) Detected"
+  },
+  "initial_capital": 100000000.0,
+  "final_equity": 114886669.17,
+  "total_net_pnl": 14886669.17,
+  "total_return_pct": 14.89,
+  "total_trades": 108,
+  "total_round_trips": 57,
+  "win_rate": 67.59,
+  "profit_factor": 2.49,
+  "expectancy_r": 0.482,
+  "average_r": 2.166,
+  "r_distribution": {
+    "mean_r": 1.1299,
+    "median_r": 0.1359,
+    "p25_r": -0.5173,
+    "p75_r": 1.7422,
+    "p95_r": 6.6908,
+    "max_r": 13.5375,
+    "min_r": -1.2598
+  },
+  "outlier_count": 1,
+  "average_win": 341000.22,
+  "average_loss": 285895.62,
+  "payoff_ratio": 1.19,
+  "max_drawdown_pct": 4.9,
+  "sharpe_ratio": 65.75,
+  "sortino_ratio": 140.28,
+  "calmar_ratio": 3.04,
+  "average_holding_minutes": 65.0,
+  "median_holding_minutes": 35.0,
+  "total_fees": 681678.9,
+  "total_tax": 4107781.93,
+  "total_slippage": 675117.0,
+  "accounting_reconciliation": {
+    "initial_cash": 100000000.0,
+    "benchmark_gross_pnl": 22476339.0,
+    "slippage_cost": 2800209.0,
+    "slippage_adjustment": -2800209.0,
+    "gross_realized_pnl": 19676130.0,
+    "commission": 681678.9014999999,
+    "tax": 4107781.926,
+    "realized_net_pnl": 14886669.1725,
+    "unrealized_net_pnl": 0,
+    "expected_equity": 114886669.1725,
+    "final_equity": 114886669.17249997,
+    "accounting_diff": 2.9802322387695312e-08,
+    "is_reconciled": true
+  },
+  "funnel": {
+    "UNIVERSE": 3136,
+    "EVENT_DETECTED": 33083,
+    "CANDIDATE": 17848,
+    "SETUP_PASS": 535,
+    "SETUP_FAIL": 17313,
+    "RULE_SCORE_PASS": 754,
+    "RULE_SCORE_FAIL": 17094,
+    "SIMILARITY_PASS": 0,
+    "SIMILARITY_FAIL": 0,
+    "ML_PASS": 0,
+    "ML_FAIL": 0,
+    "META_BUY": 57,
+    "META_BUY_SMALL": 0,
+    "META_WAIT": 0,
+    "META_NO_TRADE": 17791,
+    "EDGE_PASS": 535,
+    "EDGE_FAIL": 17313,
+    "RISK_PASS": 500,
+    "RISK_FAIL": 17348,
+    "INSUFFICIENT_CASH": 241,
+    "STALE_DATA": 0,
+    "SPREAD_FAIL": 0,
+    "COOLDOWN": 0,
+    "REENTRY_BLOCK": 0,
+    "ORDER_CREATED": 57,
+    "ORDER_SENT": 57,
+    "ORDER_ACK": 57,
+    "PARTIAL_FILL": 0,
+    "FILLED": 165,
+    "UNFILLED": 0,
+    "POSITION_OPEN": 57,
+    "STOP": 46,
+    "TARGET": 0,
+    "SCALE_OUT": 33,
+    "TARGET_2": 18,
+    "TRAILING_STOP": 0,
+    "TREND_BREAK": 0,
+    "TIME_STOP": 0,
+    "EOD": 11,
+    "EMERGENCY": 0
+  },
+  "strategy_stats": {
+    "INT_MOMENTUM_IGNITION": {
+      "trade_count": 10,
+      "win_rate": 90.0,
+      "profit_factor": 8.01,
+      "avg_r": 6.9,
+      "total_net_pnl": 3259905.39,
+      "avg_holding_minutes": 67.5
+    },
+    "INT_ORB": {
+      "trade_count": 48,
+      "win_rate": 54.2,
+      "profit_factor": 0.81,
+      "avg_r": 1.056,
+      "total_net_pnl": -1439084.81,
+      "avg_holding_minutes": 54.6
+    },
+    "INT_VWAP_PULLBACK": {
+      "trade_count": 50,
+      "win_rate": 76.0,
+      "profit_factor": 7.21,
+      "avg_r": 2.285,
+      "total_net_pnl": 13065848.59,
+      "avg_holding_minutes": 74.5
+    }
+  },
+  "leakage_audit": {
+    "overall_valid": true,
+    "verdict": "VALID",
+    "checks": {
+      "LOOKAHEAD_LEAKAGE_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      },
+      "TRAIN_DATA_CUTOFF_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      },
+      "FEATURE_TIMESTAMP_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      },
+      "MODEL_TIMESTAMP_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      },
+      "SCALER_TIMESTAMP_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      },
+      "SIMILARITY_TIMESTAMP_CHECK": {
+        "status": "PASS",
+        "violations": 0,
+        "details": []
+      }
+    }
+  },
+  "no_trade_count": 17791
+}

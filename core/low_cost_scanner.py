@@ -139,8 +139,10 @@ class LowCostMarketScanner:
                     daily_candles=daily_candles,
                     regime=regime,
                     now=now,
-                    has_catalyst=any("뉴스" in ev for ev in sym.active_events)
+                    has_catalyst=any("뉴스" in ev for ev in sym.active_events),
+                    agg=agg
                 )
+
                 for sig in swing_sigs:
                     self.store.promote(sym.iem_cd, SymbolState.SIGNAL, reason=f"스윙 신호 생성: {sig.strategy_id}")
                     valid_signals.append(sig)

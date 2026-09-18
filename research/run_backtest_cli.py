@@ -76,7 +76,9 @@ def generate_benchmark_dataset(num_trades: int = 60):
 
 def main():
     print("=" * 75)
-    print("      [국내 주식 통합 퀀트 시스템 v5.0] 백테스트 및 스트레스 분석")
+    print("  [DEPRECATED] 국내 주식 토이 벤치마크 (Toy Benchmark / Sanity Test Only)")
+    print("  경고: 본 스크립트는 난수 기반 토이 모델로 전략 실전 검증용이 아닙니다.")
+    print("  실전 검증용 엔진: python -m backtester.run_realistic_backtest")
     print("=" * 75)
 
     data = generate_benchmark_dataset(num_trades=100)

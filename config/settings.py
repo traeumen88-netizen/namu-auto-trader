@@ -23,7 +23,7 @@ TRADE_BASE_URL = "https://api.nhplug.com:8443" if TRADING_MODE == "live" else "h
 BASE_URL = TRADE_BASE_URL
 MODE_NAME = "실전투자 (LIVE)" if TRADING_MODE == "live" else "모의투자 (MOCK)"
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
-os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167"
+os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167,00218,00219,00220,00168"
 
 # 2. 감시/매매 대상 종목 유니버스 (FULL MARKET UNIVERSE v6.0 기준)
 # KOSPI + KOSDAQ 전체 상장종목(~2,670+개) 전수 로드 및 이벤트 감시
@@ -70,14 +70,57 @@ LIQUIDITY_MAX_SPREAD_RATIO = 0.0020          # 최우선 호가 스프레드 <= 
 INTRADAY_RISK_PER_TRADE = 0.005  # 단타 1회 최대 Risk: 자산의 0.5%
 SWING_RISK_PER_TRADE = 0.010     # 스윙 1회 최대 Risk: 자산의 1.0%
 
-# 포트폴리오 총 리스크 한도
+class UnlimitedLimit(float):
+    """보유 종목 수/매수 종목 수 무제한을 나타내는 클래스 (인위적 개수 제한 완전 제거)"""
+    def __new__(cls):
+        return super().__new__(cls, float('inf'))
+    def __str__(self):
+        return "UNLIMITED"
+    def __repr__(self):
+        return "UNLIMITED"
+    def __eq__(self, other):
+        if isinstance(other, str) and other.upper() == "UNLIMITED":
+            return True
+        return super().__eq__(other)
+
+UNLIMITED_POSITION_LIMIT = UnlimitedLimit()
+
+# 보유 종목 수 무제한 정책 (종목 수 자체에 대한 인위적인 제한 완전 제거)
+# 시스템은 "10개까지 살 수 있다"가 아니라 "돈과 Risk가 허용하는 한 몇 개든 살 수 있다"는 정책을 명시적으로 적용
+UNLIMITED_HOLDINGS_MODE = True
+MAX_POSITION_COUNT = "UNLIMITED"
+MAX_POSITIONS = UNLIMITED_POSITION_LIMIT
+MAX_HOLDINGS = UNLIMITED_POSITION_LIMIT
+MAX_STOCKS = UNLIMITED_POSITION_LIMIT
+MAX_BUY_COUNT = UNLIMITED_POSITION_LIMIT
+MAX_SYMBOLS = UNLIMITED_POSITION_LIMIT
+MAX_OPEN_POSITIONS = UNLIMITED_POSITION_LIMIT
+POSITION_LIMIT = UNLIMITED_POSITION_LIMIT
+HOLDING_LIMIT = UNLIMITED_POSITION_LIMIT
+max_positions = UNLIMITED_POSITION_LIMIT
+max_holdings = UNLIMITED_POSITION_LIMIT
+max_stocks = UNLIMITED_POSITION_LIMIT
+max_buy_count = UNLIMITED_POSITION_LIMIT
+max_symbols = UNLIMITED_POSITION_LIMIT
+
+POSITION_COUNT_BLOCK = False
+POSITION_COUNT_CHECK = "BYPASSED / NOT_USED"
+
+# 현금 부족 시 강제 부분 매수(BUY_SMALL) 허용 여부 (기본값: False - 돈이 없으면 사지 않는다)
+ALLOW_PARTIAL_CASH_BUY = os.getenv("ALLOW_PARTIAL_CASH_BUY", "false").lower() == "true"
+
+# Exit Reason별 주문 실행 정책 설정
+STOP_AGGRESSIVE_TICKS = int(os.getenv("STOP_AGGRESSIVE_TICKS", 3))  # 손절/위험회피 공격적 지정가 적용 틱 (기본 3틱)
+EXIT_ORDER_TIMEOUT_SECONDS = float(os.getenv("EXIT_ORDER_TIMEOUT_SECONDS", 30.0))  # 지정가 미체결 타임아웃 (기본 30초)
+
+# 포트폴리오 총 리스크 한도 (기준값)
 TOTAL_RISK_NORMAL_LIMIT = 0.03   # <= 3% : 정상 진입
 TOTAL_RISK_REDUCED_LIMIT = 0.04  # 3~4%  : 신규 진입 50% 축소
 TOTAL_RISK_CEILING = 0.04        # > 4%  : 신규 진입 전면 금지
 
-# 테마 집중도 제한
-MAX_STOCKS_PER_THEME = 3         # 동일 테마 최대 3종목
-MAX_RISK_PER_THEME = 0.015       # 동일 테마 총 리스크 <= 1.5%
+# 테마 집중도 제한: 종목 개수 제한은 없으며, 오직 테마 총 리스크로만 통제
+MAX_STOCKS_PER_THEME = UNLIMITED_POSITION_LIMIT  # 종목 개수 제한 없음
+MAX_RISK_PER_THEME = 0.015                       # 동일 테마 총 리스크 <= 1.5%
 
 # 6. 시장국면별 자산 배분 (단타 / 스윙 / 현금)
 REGIME_ALLOCATION = {
@@ -111,4 +154,12 @@ LOSS_COOLDOWN_SECONDS = 1800  # 2회 손절 시 30분 거래 중단
 
 # 10. 유니버스 감시 종목 리스트
 WATCHLIST_DEFAULTS = list(TARGET_STOCKS.keys())
+
+# 11. Section 13-19 DB Transaction Deadlock Retry 설정
+DB_TX_RETRY_BASE_DELAY = float(os.getenv("DB_TX_RETRY_BASE_DELAY", "0.05"))  # 기본 0.05초
+DB_TX_RETRY_MAX_DELAY = float(os.getenv("DB_TX_RETRY_MAX_DELAY", "1.0"))    # 최대 1.0초
+DB_TX_MAX_RETRIES = int(os.getenv("DB_TX_MAX_RETRIES", "5"))                # 최대 5회 재시도
+
+# 12. BREAKOUT 전략 진입 최소 수급 안전 게이트 (Section 10 & 24)
+BREAKOUT_MIN_RVOL = float(os.getenv("BREAKOUT_MIN_RVOL", "1.5"))
 

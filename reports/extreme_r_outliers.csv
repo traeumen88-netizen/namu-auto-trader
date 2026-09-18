@@ -1,0 +1,2 @@
+﻿trade_id,symbol,entry,stop,exit,holding_period,gap,trade_r,reason
+POS_005380_1767318000_5,005380,37550.0,37350.0,42300.0,280.0,0.0,13.5375,EXTREME_R_OUTLIER (|trade_r|=13.54R > 10R)

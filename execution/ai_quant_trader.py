@@ -77,6 +77,17 @@ class AIQuantTrader:
         self.aggregators: Dict[str, CandleAggregator] = {}
         self.current_regime = MarketRegime.STRONG_BULL
 
+        # Portfolio Risk Manager Unlimited Holdings Policy
+        from risk.portfolio_risk import PortfolioRiskManager
+        PortfolioRiskManager.UNLIMITED_MODE = True
+        print("==================================================")
+        print("[포트폴리오 정책] 보유 종목 수 무제한 정책 적용 (UNLIMITED_HOLDINGS)")
+        print("  MAX_POSITION_COUNT     = UNLIMITED")
+        print("  POSITION_COUNT_BLOCK   = FALSE")
+        print("  POSITION_COUNT_CHECK   = BYPASSED / NOT_USED")
+        print("  자금/위험 기준 통제    = 현금 부족(INSUFFICIENT_CASH), 리스크 초과(PORTFOLIO_RISK_LIMIT)")
+        print("==================================================")
+
     def get_or_create_aggregator(self, symbol: str) -> CandleAggregator:
         if symbol not in self.aggregators:
             self.aggregators[symbol] = CandleAggregator(symbol)

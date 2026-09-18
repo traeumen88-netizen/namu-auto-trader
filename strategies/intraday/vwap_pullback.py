@@ -106,5 +106,9 @@ class VWAPPullbackStrategy:
             reason=f"VWAP 눌림목 반등 (VWAP거리={vwap_dist*100:.2f}%, 거래량수축={avg_pullback_vol/avg_impulse_vol:.2f}x)",
             timestamp=current_time,
             atr14=atr,
-            expected_rr=2.0
+            expected_rr=2.0,
+            entry_timing_valid=True,
+            timing_reason="VWAP눌림목_반등확인",
+            rule_score=88.0,
+            approved_status="BUY_APPROVED"
         )

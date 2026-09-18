@@ -71,8 +71,25 @@ class SymbolStateStore:
         self._state_index[new_state].add(iem_cd)
         sym.state = new_state
 
+        now_dt = datetime.now()
+        if new_state in (SymbolState.WATCH, SymbolState.ACTIVE, SymbolState.SIGNAL):
+            if sym.candidate_time is None:
+                sym.candidate_time = now_dt
+            sym.score_history.append((now_dt, sym.event_score))
+            if len(sym.score_history) > 50:
+                sym.score_history.pop(0)
+        elif new_state == SymbolState.INACTIVE:
+            sym.candidate_time = None
+
         logger.debug(f"[상태 전이] {sym.name}({iem_cd}): {old_state.value} -> {new_state.value} ({reason})")
         return True
+
+    def check_watch_timeouts(self, now: datetime, max_idle_seconds: int = 300):
+        """WATCH 상태에서 일정 시간(기본 5분) 이상 승격/주문 없이 방치된 종목 자동 정리 (Section 14)"""
+        watch_symbols = self.get_by_state(SymbolState.WATCH)
+        for sym in watch_symbols:
+            if sym.candidate_time and (now - sym.candidate_time).total_seconds() > max_idle_seconds:
+                self.demote(sym.iem_cd, SymbolState.INACTIVE, reason=f"후보 체류 시간 초과 ({max_idle_seconds}초)")
 
     def promote(self, iem_cd: str, target_state: SymbolState, reason: str = "") -> bool:
         """승격 (INACTIVE -> WATCH -> ACTIVE -> SIGNAL)"""
@@ -108,15 +125,20 @@ class SymbolStateStore:
         if open_price > 0 and sym.open_price == 0:
             sym.open_price = open_price
 
-    def set_cooldown(self, iem_cd: str, duration_seconds: int = 1800):
+    def set_cooldown(self, iem_cd: str, *args, duration_seconds: int = 1800, cooldown_seconds: int = None, **kwargs):
         """손절 후 쿨다운 상태 진입"""
         sym = self._symbols.get(iem_cd)
         if not sym:
             return
+        sec = cooldown_seconds if cooldown_seconds is not None else duration_seconds
+        for a in args:
+            if isinstance(a, (int, float)):
+                sec = int(a)
+                break
         now = datetime.now()
-        sym.cooldown_until = now + timedelta(seconds=duration_seconds)
+        sym.cooldown_until = now + timedelta(seconds=sec)
         sym.loss_count_today += 1
-        self.transition_state(iem_cd, SymbolState.COOLDOWN, reason=f"쿨다운 설정({duration_seconds}초)")
+        self.transition_state(iem_cd, SymbolState.COOLDOWN, reason=f"쿨다운 설정({sec}초)")
 
     def check_cooldown_expiry(self, now: datetime = None):
         """쿨다운 만료 종목을 INACTIVE로 복귀"""

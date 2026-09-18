@@ -36,8 +36,8 @@ class TradingFirewall:
         self,
         circuit_breaker: Optional[CircuitBreaker] = None,
         loss_limit_mgr: Optional[LossLimitManager] = None,
-        max_intraday_positions: int = 5,
-        max_swing_positions: int = 5,
+        max_intraday_positions: Any = float("inf"),
+        max_swing_positions: Any = float("inf"),
         max_single_stock_pct: float = 0.15,
         max_sector_pct: float = 0.30
     ):
@@ -186,5 +186,10 @@ class TradingFirewall:
             shares=shares,
             normalized_price=normalized_p,
             risk_status="APPROVED",
-            details={"approved_shares": shares, "normalized_price": normalized_p}
+            details={
+                "approved_shares": shares,
+                "normalized_price": normalized_p,
+                "position_count_check": "BYPASSED / NOT_USED",
+                "max_position_count": "UNLIMITED"
+            }
         )

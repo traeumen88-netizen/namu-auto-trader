@@ -1,0 +1,36 @@
+{
+  "overall_valid": true,
+  "verdict": "VALID",
+  "checks": {
+    "LOOKAHEAD_LEAKAGE_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    },
+    "TRAIN_DATA_CUTOFF_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    },
+    "FEATURE_TIMESTAMP_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    },
+    "MODEL_TIMESTAMP_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    },
+    "SCALER_TIMESTAMP_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    },
+    "SIMILARITY_TIMESTAMP_CHECK": {
+      "status": "PASS",
+      "violations": 0,
+      "details": []
+    }
+  }
+}

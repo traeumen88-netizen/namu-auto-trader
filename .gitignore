@@ -1,6 +1,8 @@
 # 보안 민감 설정 파일 (절대 Git에 커밋하지 않음)
 .env
 *.env
+config/kakao_token.json
+config/telegram_config.json
 
 # 파이썬 캐시
 __pycache__/
@@ -16,6 +18,9 @@ __pycache__/
 ~/.nhplug/
 data/
 models/
+scratch/
+scratch_*.txt
+why_no_buy_dump.txt
 
 
 # 가상환경

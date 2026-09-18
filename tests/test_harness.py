@@ -423,6 +423,21 @@ from tests.test_v6_full_universe_harness import TestV6FullUniverseHarness
 # v7.0 자기학습형 AI 자동매매 시스템 검증 테스트 스위트 연동 (Section 97)
 from tests.test_v7_self_improving_ai_harness import TestV7SelfImprovingAIHarness
 
+# v8.0 실제 BUY 체결 보장 패치 검증 테스트 스위트 연동
+from tests.test_v8_buy_execution_patch import TestV8BuyExecutionPatch
+
+# v9.3 12단계 전수 파이프라인 검증 테스트 스위트 연동
+from tests.test_v9_final_execution_patch import TestV9FinalExecutionPatch
+
+# v10.0 통합 듀얼(모의+실전 동시 가동) 엔진 하네스 검증 연동
+from tests.test_v10_dual_trader_harness import TestV10DualTraderHarness
+
+# v11.0 15대 필수 테스트 전수 검증 마스터 하네스 연동
+from tests.test_v11_master_harness import TestV11MasterHarness
+
+# v12.3 Learning Integrity + Retraining Trigger + Point-in-Time Experience Memory 연동
+from tests.test_v12_learning_integrity_harness import TestV12LearningIntegrityHarness
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

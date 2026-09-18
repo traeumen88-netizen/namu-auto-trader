@@ -21,14 +21,14 @@ if TRADING_MODE == "live":
     MODE_NAME = "실전투자 (LIVE)"
 else:
     BASE_URL = "https://moapi.nhplug.com:8443"
-    ACCOUNT_NO = os.getenv("ACCOUNT_MOCK", "50071003032")
+    ACCOUNT_NO = os.getenv("ACCOUNT_MOCK", "50001003032")
     MODE_NAME = "모의투자 (MOCK)"
 
 # nhplug 패키지 연동을 위해 환경변수 동기화
 os.environ["NHPLUG_APP_KEY"] = APP_KEY
 os.environ["NHPLUG_APP_SECRET"] = APP_SECRET
 os.environ["NHPLUG_BASE_URL"] = BASE_URL
-os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167"
+os.environ["NHPLUG_SUCCESS_CODES"] = "00000,00166,00221,13578,XA109,00001,00167,00218,00219,00220,00168"
 
 # 4. 리스크 관리 설정
 STOP_LOSS_RATE = float(os.getenv("STOP_LOSS_RATE", -0.02))      # 손절선 (예: -2%)
@@ -47,5 +47,8 @@ try:
 except Exception:
     from universe.universe_scanner import UniverseScanner
     TARGET_STOCKS = UniverseScanner.get_universe_dict(UNIVERSE_MODE)
+
+# 6. BREAKOUT 수급 안전 게이트
+BREAKOUT_MIN_RVOL = float(os.getenv("BREAKOUT_MIN_RVOL", 1.5))
 
 
