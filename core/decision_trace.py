@@ -231,6 +231,13 @@ class DecisionTraceRegistry:
             except Exception as err:
                 logger.warning(f"Failed to append decision trace to file: {err}")
 
+        # Live telemetry export
+        try:
+            from execution.live_telemetry_exporter import LiveTelemetryExporter
+            LiveTelemetryExporter.get_instance().record_decision(record)
+        except Exception:
+            pass
+
         return record
 
     @property

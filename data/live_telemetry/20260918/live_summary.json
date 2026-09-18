@@ -1,0 +1,44 @@
+{
+  "date": "20260918",
+  "generated_at": "2026-09-18T14:44:29.767442+09:00",
+  "trading_mode": "LIVE",
+  "entry_quality": {
+    "buy_approved": 0,
+    "orders_sent": 0,
+    "filled": 0,
+    "reject_count": 0,
+    "reject_reasons": {}
+  },
+  "profit_opportunity": {
+    "pass": 0,
+    "reject": 0,
+    "reject_reasons": {}
+  },
+  "reentry": {
+    "same_symbol_reentry": 0,
+    "stop_to_reentry_lt_15m": 0,
+    "stop_to_reentry_15_30m": 0,
+    "stop_to_reentry_gt_30m": 0
+  },
+  "micro_trade": {
+    "count": 0,
+    "ratio": 0.0,
+    "average_pnl": 0.0,
+    "average_holding_time_minutes": 0.0
+  },
+  "counterfactual": {
+    "blocked_trade_count": 0,
+    "mfe_5m_avg": 0.0,
+    "mfe_15m_avg": 0.0,
+    "mfe_30m_avg": 0.0
+  },
+  "completed_trades": {
+    "count": 0,
+    "average_mfe": 0.0,
+    "average_mae": 0.0,
+    "average_holding_time_minutes": 0.0,
+    "average_gross_move": 0.0,
+    "average_net_move": 0.0,
+    "average_cost": 0.0
+  }
+}

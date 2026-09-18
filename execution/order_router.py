@@ -88,6 +88,22 @@ class OrderRouter:
         if listener not in self.cancel_listeners:
             self.cancel_listeners.append(listener)
 
+    def _export_telemetry(self, stage: str, order: Any, extra_info: Optional[Dict[str, Any]] = None):
+        """실시간 분석용 Telemetry Exporter 비동기 통지 (거래 엔진 완전 비차단)"""
+        try:
+            from execution.live_telemetry_exporter import LiveTelemetryExporter
+            LiveTelemetryExporter.get_instance().record_order_event(stage, order, extra_info)
+        except Exception:
+            pass
+
+    def _export_fill_telemetry(self, order: Any, fill_qty: int, fill_price: float, is_full_fill: bool):
+        """실시간 체결 분석용 Telemetry Exporter 비동기 통지 (거래 엔진 완전 비차단)"""
+        try:
+            from execution.live_telemetry_exporter import LiveTelemetryExporter
+            LiveTelemetryExporter.get_instance().record_fill(order, fill_qty, fill_price, is_full_fill)
+        except Exception:
+            pass
+
     def check_broker_health(self) -> bool:
         """브로커 통신 가능 여부 안전 확인 (불필요한 무거운 API 호출 없이 클라이언트/토큰 상태 점검)"""
         if self.client is None:
@@ -679,6 +695,9 @@ class OrderRouter:
             if intent_id:
                 self.executed_intent_ids[intent_id] = order
 
+            # Telemetry: ORDER_CREATED
+            self._export_telemetry("ORDER_CREATED", order)
+
             # Central Cash Reservation (Section 3 & 6 & 7)
             if self.cash_manager and signal.side == OrderSide.BUY:
                 ok, msg, req, shortfall_rec = self.cash_manager.revalidate_and_reserve_cash(
@@ -808,6 +827,8 @@ class OrderRouter:
 
         # 실전 / 모의투자 브로커 API 전송
         self.rate_limiter.wait_turn("ORDER")
+        order.status = OrderStatus.ORDER_SENT
+        self._export_telemetry("ORDER_SENT", order)
         try:
             if signal.side == OrderSide.BUY:
                 if order_type == OrderType.MARKET:
@@ -833,6 +854,9 @@ class OrderRouter:
             order.filled_qty = 0
             order.remaining_qty = shares
             order.filled_avg_price = 0.0
+
+            # Telemetry: ORDER_ACK
+            self._export_telemetry("ORDER_ACK", order)
 
             if self.funnel_telemetry:
                 self.funnel_telemetry.record_funnel_event(
@@ -861,6 +885,7 @@ class OrderRouter:
             order.status = OrderStatus.REJECTED
             signal.rejection_reasons.append(f"BROKER_API_ERROR: {e}")
             signal.approved_status = "REJECTED"
+            self._export_telemetry("REJECTED", order, {"reason": str(e)})
             if client_order_id in self.pending_orders:
                 del self.pending_orders[client_order_id]
 
@@ -994,6 +1019,7 @@ class OrderRouter:
             order.broker_order_no = broker_order_no
             order.status = OrderStatus.ORDER_ACK
             logger.info(f"[주문 ACK 수신] {client_order_id} -> 브로커 주문번호: {broker_order_no}")
+            self._export_telemetry("ORDER_ACK", order)
 
     def on_fill(self, client_order_id: str, filled_qty: int = 0, fill_price: float = 0.0, is_cumulative: bool = False, **kwargs):
         """체결 이벤트 수신 처리 (실제 브로커 체결 확인 시점에만 상태 전이 및 통지)"""
@@ -1052,6 +1078,9 @@ class OrderRouter:
                 except Exception as l_err:
                     logger.error(f"체결 리스너 통지 실패: {l_err}")
 
+            # Telemetry: BUY_FILLED / SELL_FILLED / PARTIAL_FILL
+            self._export_fill_telemetry(order, newly_filled, fill_price, is_full_fill)
+
     def retry_order(self, client_order_id: str) -> Tuple[bool, str, Optional[Order]]:
         """
         ORDER_SENT -> ACK 지연 상태에서의 재시도 처리 (멱등성 보장).
@@ -1089,6 +1118,8 @@ class OrderRouter:
 
         if self.cash_manager and order.side == OrderSide.BUY:
             self.cash_manager.on_order_cancel_or_reject(client_order_id)
+
+        self._export_telemetry("CANCELLED", order, {"reason": reason})
 
         for listener in getattr(self, "cancel_listeners", []):
             try:

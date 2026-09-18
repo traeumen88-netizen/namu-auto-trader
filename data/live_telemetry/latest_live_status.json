@@ -1,0 +1,29 @@
+{
+  "updated_at": "2026-09-18T14:44:29.774638+09:00",
+  "trading_mode": "LIVE",
+  "market_status": "OPEN",
+  "process_status": "RUNNING",
+  "buy_signal_count": 0,
+  "buy_approved": 1,
+  "buy_orders_sent": 0,
+  "buy_fills": 0,
+  "sell_signals": 0,
+  "sell_orders_sent": 1,
+  "sell_fills": 0,
+  "open_positions": 0,
+  "pending_orders": 0,
+  "entry_quality_reject": 0,
+  "profit_opportunity_reject": 0,
+  "reentry_reject": 0,
+  "cash_reject": 0,
+  "micro_trade_count": 0,
+  "last_event": {
+    "event": "SELL_ORDER_ACK",
+    "symbol": "027360",
+    "timestamp": "2026-09-18T14:44:29.766879+09:00"
+  },
+  "git_sync_status": "OK",
+  "last_push_at": null,
+  "last_push_result": "NONE",
+  "pending_telemetry_events": 0
+}

@@ -14,9 +14,21 @@ __pycache__/
 *.log
 *.tmp
 *.db
+*.sqlite
+*.sqlite3
+*.key
+*.pem
+*.secret
 .token-*.json
 ~/.nhplug/
-data/
+
+# 데이터 디렉터리: live_telemetry를 제외한 모든 DB, 로그, 락 파일 차단
+data/*
+!data/live_telemetry/
+data/live_telemetry/.git_sync.lock
+data/live_telemetry/**/*.tmp
+data/live_telemetry/*.tmp
+
 models/
 scratch/
 scratch_*.txt
