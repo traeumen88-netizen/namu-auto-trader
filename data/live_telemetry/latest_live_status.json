@@ -1,7 +1,7 @@
 {
-  "updated_at": "2026-09-18T15:15:58.272662+09:00",
+  "updated_at": "2026-09-18T15:16:25.069640+09:00",
   "trading_mode": "LIVE",
-  "environment": "LIVE",
+  "environment": "TEST",
   "market_status": "OPEN",
   "process_status": "RUNNING",
   "buy_signal_count": 0,
@@ -21,7 +21,12 @@
   "reentry_reject": 0,
   "cash_reject": 0,
   "micro_trade_count": 0,
-  "last_event": null,
+  "last_event": {
+    "event": "TEST_EVENT",
+    "symbol": "005930",
+    "environment": "TEST",
+    "timestamp": "2026-09-18T15:16:25.063185+09:00"
+  },
   "git_sync_status": "OK",
   "last_push_at": null,
   "last_push_result": "NONE",
