@@ -284,7 +284,7 @@ class AccountContext:
 
 
 class LiveQuantTrader:
-    def __init__(self, mode: str = "dual", act_no: str = None, force_signal_test: bool = False):
+    def __init__(self, mode: str = "dual", act_no: str = None, force_signal_test: bool = False, start_syncer: Optional[bool] = None):
         self.circuit_breaker = CircuitBreaker()
         self.diagnostic_engine = DiagnosticEngine()
         self.quote_manager = OrderQuoteManager(max_order_age_sec=3.0)
@@ -358,6 +358,37 @@ class LiveQuantTrader:
         self.position_manager = primary.position_manager
         self.loss_manager = primary.loss_manager
 
+        # [Section 21] Live Telemetry & GitHub Syncer
+        from execution.live_telemetry_exporter import LiveTelemetryExporter
+        from execution.telemetry_git_syncer import TelemetryGitSyncer
+
+        is_test = (
+            "pytest" in sys.modules
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or os.environ.get("NAMU_TEST_ENV") == "1"
+        )
+        telemetry_env = "TEST" if is_test else ("LIVE" if self.mode in ("live", "dual") else "MOCK")
+        telemetry_src = "UNIT_TEST" if is_test else ("LIVE_TRADER" if telemetry_env == "LIVE" else "MOCK_TRADER")
+        telemetry_dir = "data/live_telemetry"
+
+        self.telemetry_exporter = LiveTelemetryExporter.get_instance(
+            base_dir=os.path.join(BASE_DIR, telemetry_dir),
+            environment=telemetry_env,
+            source=telemetry_src
+        )
+        self.telemetry_exporter.trading_mode = self.mode.upper()
+
+        self.telemetry_syncer = TelemetryGitSyncer(
+            repo_dir=BASE_DIR,
+            telemetry_dir=telemetry_dir,
+            exporter=self.telemetry_exporter
+        )
+        self.telemetry_exporter.set_git_syncer(self.telemetry_syncer)
+
+        should_start_syncer = (not is_test) if start_syncer is None else start_syncer
+        if should_start_syncer:
+            self.telemetry_syncer.start()
+
         # 1. KOSPI + KOSDAQ 전체 상장종목 Universe 로딩 (3,136종목)
         print("\n[UNIVERSE 초기화] KOSPI + KOSDAQ 전체 상장종목 로딩 중...")
         self.full_universe = FullUniverseMaster.load_full_universe()
@@ -418,6 +449,12 @@ class LiveQuantTrader:
             except Exception as e:
                 logger.warning(f"[{acc.name}] 보유 포지션 복구 대기: {e}")
         print("[장전 데이터 로딩] 전체 시장(3,136종목) 수급 레이더 및 고속 온디맨드 분석 준비 완료.")
+        if hasattr(self, "telemetry_exporter") and self.telemetry_exporter:
+            try:
+                self.telemetry_exporter.sync_order_router_state(self.order_router)
+                self.telemetry_exporter.sync_position_manager_state(self.position_manager)
+            except Exception as se:
+                logger.warning(f"Telemetry initial state sync failed: {se}")
 
     def _log_run_cycle_failure(
         self,
@@ -1879,6 +1916,48 @@ class LiveQuantTrader:
         except Exception as e:
             logger.warning(f"대시보드 텔레메트리 파일 저장 실패: {e}")
 
+    def shutdown(self):
+        """
+        Graceful shutdown sequence:
+        1. Sync active orders and positions to telemetry
+        2. Flush telemetry exporter queue and update status to STOPPED
+        3. Trigger final git commit & push before stopping
+        4. Stop background syncer and exporter threads
+        5. Stop telegram receiver
+        """
+        logger.info("[SHUTDOWN] Initiating graceful shutdown sequence...")
+        if hasattr(self, "telemetry_exporter") and self.telemetry_exporter:
+            try:
+                self.telemetry_exporter.process_status = "STOPPED"
+                if hasattr(self, "order_router") and self.order_router:
+                    self.telemetry_exporter.sync_order_router_state(self.order_router)
+                if hasattr(self, "position_manager") and self.position_manager:
+                    self.telemetry_exporter.sync_position_manager_state(self.position_manager)
+                self.telemetry_exporter.flush()
+            except Exception as e:
+                logger.error(f"[SHUTDOWN] Exporter flush failed: {e}")
+
+        if hasattr(self, "telemetry_syncer") and self.telemetry_syncer:
+            try:
+                if self.telemetry_syncer._running:
+                    self.telemetry_syncer.sync_now(reason="shutdown")
+                self.telemetry_syncer.stop()
+            except Exception as e:
+                logger.error(f"[SHUTDOWN] Syncer stop failed: {e}")
+
+        if hasattr(self, "telemetry_exporter") and self.telemetry_exporter:
+            try:
+                self.telemetry_exporter.stop()
+            except Exception as e:
+                logger.error(f"[SHUTDOWN] Exporter stop failed: {e}")
+
+        if hasattr(self, "telegram_notifier") and self.telegram_notifier:
+            try:
+                self.telegram_notifier.stop_receiver()
+            except Exception:
+                pass
+        logger.info("[SHUTDOWN] Graceful shutdown completed.")
+
 
 def main():
     import argparse
@@ -1901,8 +1980,8 @@ def main():
     from core.account_lock import AccountLockManager
     lock_mgr = AccountLockManager(
         mode=mode,
-        account_live=getattr(settings, "ACCOUNT_LIVE", "20201549311"),
-        account_mock=getattr(settings, "ACCOUNT_MOCK", "50001003032")
+        account_live=getattr(settings, "ACCOUNT_LIVE", ""),
+        account_mock=getattr(settings, "ACCOUNT_MOCK", "")
     )
     locked_ok, err_msg = lock_mgr.acquire_all()
     if not locked_ok:
@@ -1960,8 +2039,11 @@ def main():
     except KeyboardInterrupt:
         print("\n\n[안내] 사용자에 의해 퀀트 자동매매 시스템이 안전하게 종료되었습니다.")
     finally:
-        if trader and hasattr(trader, "telegram_notifier") and trader.telegram_notifier:
-            trader.telegram_notifier.stop_receiver()
+        if trader:
+            try:
+                trader.shutdown()
+            except Exception as sht_err:
+                logger.error(f"[SHUTDOWN_ERR] {sht_err}")
         try:
             lock_mgr.release_all()
         except Exception:

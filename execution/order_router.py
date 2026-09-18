@@ -92,7 +92,9 @@ class OrderRouter:
         """실시간 분석용 Telemetry Exporter 비동기 통지 (거래 엔진 완전 비차단)"""
         try:
             from execution.live_telemetry_exporter import LiveTelemetryExporter
-            LiveTelemetryExporter.get_instance().record_order_event(stage, order, extra_info)
+            exporter = LiveTelemetryExporter.get_instance()
+            exporter.record_order_event(stage, order, extra_info)
+            exporter.sync_order_router_state(self)
         except Exception:
             pass
 
@@ -100,7 +102,9 @@ class OrderRouter:
         """실시간 체결 분석용 Telemetry Exporter 비동기 통지 (거래 엔진 완전 비차단)"""
         try:
             from execution.live_telemetry_exporter import LiveTelemetryExporter
-            LiveTelemetryExporter.get_instance().record_fill(order, fill_qty, fill_price, is_full_fill)
+            exporter = LiveTelemetryExporter.get_instance()
+            exporter.record_fill(order, fill_qty, fill_price, is_full_fill)
+            exporter.sync_order_router_state(self)
         except Exception:
             pass
 

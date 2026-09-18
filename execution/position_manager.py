@@ -139,12 +139,14 @@ class PositionManager:
                         try:
                             from execution.live_telemetry_exporter import LiveTelemetryExporter
                             ht = (pos.exit_time - pos.entry_time).total_seconds() if hasattr(pos, "entry_time") and isinstance(pos.entry_time, datetime) else 0.0
-                            LiveTelemetryExporter.get_instance().record_position_event("POSITION_CLOSED", pos, {
+                            exp = LiveTelemetryExporter.get_instance()
+                            exp.record_position_event("POSITION_CLOSED", pos, {
                                 "pnl": (float(fill_price) - pos.entry_price) * fill_qty,
                                 "pnl_pct": ((float(fill_price) - pos.entry_price) / pos.entry_price * 100.0) if pos.entry_price > 0 else 0.0,
                                 "exit_reason": getattr(pos, "exit_reason", ""),
                                 "holding_time_sec": ht,
                             })
+                            exp.sync_position_manager_state(self)
                         except Exception:
                             pass
                 else:
@@ -152,11 +154,13 @@ class PositionManager:
                     logger.info(f"[포지션 부분 체결] {pos.name}({pos.iem_cd}) {fill_qty}주 체결, 잔여 {pos.qty}주")
                     try:
                         from execution.live_telemetry_exporter import LiveTelemetryExporter
-                        LiveTelemetryExporter.get_instance().record_position_event("PARTIAL_EXITED", pos, {
+                        exp = LiveTelemetryExporter.get_instance()
+                        exp.record_position_event("PARTIAL_EXITED", pos, {
                             "partial_fill_qty": fill_qty,
                             "remaining_qty": pos.qty,
                             "fill_price": float(fill_price),
                         })
+                        exp.sync_position_manager_state(self)
                     except Exception:
                         pass
 
@@ -293,7 +297,9 @@ class PositionManager:
         print(f"[포지션 등록] [{mode}:{act_no}] {pos.name}({pos.iem_cd}) [{pos.time_horizon.value}] {qty}주 @ {entry_price:,}원 (ID: {pos_id}, 세션: {signal_session}/{entry_session})")
         try:
             from execution.live_telemetry_exporter import LiveTelemetryExporter
-            LiveTelemetryExporter.get_instance().record_position_event("POSITION_OPEN", pos)
+            exp = LiveTelemetryExporter.get_instance()
+            exp.record_position_event("POSITION_OPEN", pos)
+            exp.sync_position_manager_state(self)
         except Exception:
             pass
         return pos

@@ -2,7 +2,9 @@
 Live Telemetry Exporter (execution/live_telemetry_exporter.py)
 Automated real-time transaction telemetry exporter for public GitHub sync.
 - Non-blocking Queue architecture: Trading engine is NEVER blocked
+- Strict test/live isolation: pytest / test events are NEVER written to live YYYYMMDD/ directory
 - Strict deduplication via event_id
+- Accurate real-time pending_orders, open_positions, and order status state machine tracking
 - Sanitizes sensitive keys, tokens, and account numbers via TelemetrySanitizer
 - Partitioned storage: data/live_telemetry/YYYYMMDD/{live_decision,live_orders,live_fills,live_positions,live_rejections,live_errors}.jsonl
 - Atomic latest_live_status.json updater
@@ -10,10 +12,12 @@ Automated real-time transaction telemetry exporter for public GitHub sync.
 """
 
 import os
+import sys
 import json
 import time
 import queue
 import uuid
+import tempfile
 import logging
 import threading
 from datetime import datetime, timezone, timedelta
@@ -21,6 +25,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from collections import OrderedDict
 
 from core.telemetry_sanitizer import TelemetrySanitizer
+from core.models import OrderStatus
 
 logger = logging.getLogger("LiveTelemetryExporter")
 
@@ -44,17 +49,43 @@ class LiveTelemetryExporter:
     _instance: Optional["LiveTelemetryExporter"] = None
     _lock = threading.Lock()
 
-    def __init__(self, base_dir: str = "data/live_telemetry", max_queue_size: int = 10000):
-        self.base_dir = os.path.abspath(base_dir)
+    def __init__(
+        self,
+        base_dir: Optional[str] = None,
+        environment: Optional[str] = None,
+        source: Optional[str] = None,
+        max_queue_size: int = 10000,
+    ):
+        # Auto-detect test environment (pytest, unit tests)
+        is_test_env = (
+            "pytest" in sys.modules
+            or "PYTEST_CURRENT_TEST" in os.environ
+            or os.environ.get("NAMU_TEST_ENV") == "1"
+        )
+        self.environment = environment or ("TEST" if is_test_env else "LIVE")
+        self.default_source = source or ("UNIT_TEST" if self.environment == "TEST" else "LIVE_TRADER")
+
+        if base_dir:
+            self.base_dir = os.path.abspath(base_dir)
+        elif is_test_env:
+            self.base_dir = os.path.abspath(os.path.join(tempfile.gettempdir(), "namu_test_telemetry"))
+        else:
+            self.base_dir = os.path.abspath("data/live_telemetry")
+
         self.max_queue_size = max_queue_size
         self.queue: queue.Queue = queue.Queue(maxsize=max_queue_size)
         self._seen_event_ids: OrderedDict[str, float] = OrderedDict()
         self._seen_lock = threading.Lock()
+        self._process_lock = threading.Lock()
         self.max_seen_history = 50000
 
         self.trading_mode: str = "LIVE"
         self.market_status: str = "OPEN"
         self.process_status: str = "RUNNING"
+
+        # Active state registries for accurate status reporting
+        self._active_pending_orders: Dict[str, Dict[str, Any]] = {}
+        self._active_open_positions: Dict[str, Dict[str, Any]] = {}
 
         # Telemetry metrics counters
         self._metrics_lock = threading.Lock()
@@ -68,6 +99,9 @@ class LiveTelemetryExporter:
             "sell_fills": 0,
             "open_positions": 0,
             "pending_orders": 0,
+            "pending_order_count": 0,
+            "pending_buy_orders": 0,
+            "pending_sell_orders": 0,
             "entry_quality_reject": 0,
             "profit_opportunity_reject": 0,
             "reentry_reject": 0,
@@ -113,7 +147,7 @@ class LiveTelemetryExporter:
             },
         }
 
-        # Git syncer reference (optional callback)
+        # Git syncer reference
         self.git_syncer = None
 
         self._running = True
@@ -121,10 +155,22 @@ class LiveTelemetryExporter:
         self._worker_thread.start()
 
     @classmethod
-    def get_instance(cls, base_dir: str = "data/live_telemetry") -> "LiveTelemetryExporter":
+    def get_instance(
+        cls,
+        base_dir: Optional[str] = None,
+        environment: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> "LiveTelemetryExporter":
         with cls._lock:
             if cls._instance is None:
-                cls._instance = cls(base_dir=base_dir)
+                cls._instance = cls(base_dir=base_dir, environment=environment, source=source)
+            else:
+                if base_dir and cls._instance.base_dir != os.path.abspath(base_dir):
+                    cls._instance.base_dir = os.path.abspath(base_dir)
+                if environment:
+                    cls._instance.environment = environment
+                if source:
+                    cls._instance.default_source = source
             return cls._instance
 
     @classmethod
@@ -147,10 +193,66 @@ class LiveTelemetryExporter:
         """Updates git sync fields in latest_live_status."""
         with self._metrics_lock:
             self.metrics["git_sync_status"] = status
-            if last_push_at:
+            if last_push_at is not None:
                 self.metrics["last_push_at"] = last_push_at
-            if result:
+            if result is not None:
                 self.metrics["last_push_result"] = result
+        self._write_latest_status()
+
+    def sync_order_router_state(self, order_router: Any):
+        """Directly synchronizes active pending orders from OrderRouter."""
+        if not order_router or not hasattr(order_router, "pending_orders"):
+            return
+        active_statuses = (
+            OrderStatus.ORDER_CREATED,
+            OrderStatus.ORDER_SENT,
+            OrderStatus.ORDER_ACK,
+            OrderStatus.PENDING,
+            OrderStatus.PARTIAL_FILL,
+        )
+        with self._metrics_lock:
+            self._active_pending_orders.clear()
+            for cid, o in list(order_router.pending_orders.items()):
+                st = getattr(o, "status", None)
+                rem_qty = getattr(o, "remaining_qty", getattr(o, "qty", 0))
+                st_val = getattr(st, "value", str(st))
+                is_active = (st in active_statuses) or any(
+                    s in st_val.upper() for s in ("CREATED", "SENT", "ACK", "PENDING", "PARTIAL")
+                )
+                if is_active and rem_qty > 0:
+                    side_val = getattr(getattr(o, "side", None), "value", str(getattr(o, "side", ""))).upper()
+                    self._active_pending_orders[cid] = {
+                        "client_order_id": cid,
+                        "broker_order_no": getattr(o, "broker_order_no", ""),
+                        "symbol": getattr(o, "iem_cd", ""),
+                        "side": side_val,
+                        "status": st_val,
+                        "remaining_qty": rem_qty,
+                    }
+            self.metrics["pending_orders"] = len(self._active_pending_orders)
+            self.metrics["pending_order_count"] = len(self._active_pending_orders)
+            self.metrics["pending_buy_orders"] = sum(
+                1 for o in self._active_pending_orders.values() if "BUY" in str(o.get("side", "")).upper()
+            )
+            self.metrics["pending_sell_orders"] = sum(
+                1 for o in self._active_pending_orders.values() if "SELL" in str(o.get("side", "")).upper()
+            )
+        self._write_latest_status()
+
+    def sync_position_manager_state(self, position_manager: Any):
+        """Directly synchronizes active open positions from PositionManager."""
+        if not position_manager or not hasattr(position_manager, "positions"):
+            return
+        with self._metrics_lock:
+            self._active_open_positions.clear()
+            for pid, pos in list(position_manager.positions.items()):
+                if not getattr(pos, "is_closed", False) and getattr(pos, "qty", 0) > 0:
+                    self._active_open_positions[pid] = {
+                        "symbol": getattr(pos, "iem_cd", ""),
+                        "qty": getattr(pos, "qty", 0),
+                        "entry_price": getattr(pos, "entry_price", 0.0),
+                    }
+            self.metrics["open_positions"] = len(self._active_open_positions)
         self._write_latest_status()
 
     def generate_event_id(self, event_type: str, symbol: str = "") -> str:
@@ -172,7 +274,15 @@ class LiveTelemetryExporter:
                 self._seen_event_ids.popitem(last=False)
             return False
 
-    def emit_event(self, event_type: str, payload: Dict[str, Any], is_critical: Optional[bool] = None, date_str: Optional[str] = None) -> Optional[str]:
+    def emit_event(
+        self,
+        event_type: str,
+        payload: Dict[str, Any],
+        is_critical: Optional[bool] = None,
+        date_str: Optional[str] = None,
+        environment: Optional[str] = None,
+        source: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Non-blocking enqueue of a telemetry event.
         Guaranteed NEVER to block trading execution.
@@ -183,6 +293,12 @@ class LiveTelemetryExporter:
             payload["event"] = event_type
             if "timestamp" not in payload:
                 payload["timestamp"] = datetime.now(KST).isoformat()
+
+            # Assign environment and source
+            if "environment" not in payload:
+                payload["environment"] = environment or self.environment
+            if "source" not in payload:
+                payload["source"] = source or self.default_source
 
             if is_critical is None:
                 is_critical = event_type.upper() in CRITICAL_EVENTS
@@ -213,7 +329,8 @@ class LiveTelemetryExporter:
                 except queue.Empty:
                     continue
 
-                self._process_item(item)
+                with self._process_lock:
+                    self._process_item(item)
                 self.queue.task_done()
             except Exception as loop_err:
                 logger.error(f"Unexpected error in Telemetry worker loop: {loop_err}", exc_info=True)
@@ -233,10 +350,20 @@ class LiveTelemetryExporter:
         # 2. Strict Sanitization
         sanitized = TelemetrySanitizer.sanitize_data(raw_payload)
 
-        # 3. File destination mapping
-        date_dir = os.path.join(self.base_dir, date_str)
-        os.makedirs(date_dir, exist_ok=True)
+        # 3. Environment routing:
+        # TEST events must NEVER enter live YYYYMMDD date directories!
+        event_env = str(sanitized.get("environment", self.environment)).upper()
+        is_live_telemetry_dir = (
+            self.base_dir.endswith("data/live_telemetry")
+            or self.base_dir.endswith("data\\live_telemetry")
+            or os.path.basename(self.base_dir) == "live_telemetry"
+        )
+        if event_env == "TEST" and is_live_telemetry_dir:
+            date_dir = os.path.join(self.base_dir, "fixtures", date_str)
+        else:
+            date_dir = os.path.join(self.base_dir, date_str)
 
+        os.makedirs(date_dir, exist_ok=True)
         target_filename = self._determine_target_file(event_type)
         file_path = os.path.join(date_dir, target_filename)
 
@@ -248,7 +375,7 @@ class LiveTelemetryExporter:
         except Exception as write_err:
             logger.error(f"Failed to write telemetry to {file_path}: {write_err}")
 
-        # 5. Update In-memory metrics & Daily stats
+        # 5. Update in-memory metrics, active orders, and daily stats
         self._update_metrics_and_stats(event_type, sanitized)
 
         # 6. Write latest_live_status.json (Atomic)
@@ -281,6 +408,38 @@ class LiveTelemetryExporter:
         with self._metrics_lock:
             self.metrics["pending_telemetry_events"] = self.queue.qsize()
 
+            # Active pending orders tracking
+            cid = data.get("client_order_id")
+            if cid:
+                order_state = str(data.get("broker_order_state", "")).upper()
+                side = str(data.get("side", "")).upper()
+                rem_qty = data.get("remaining_qty", data.get("requested_qty", 0))
+
+                is_terminal = (
+                    order_state in ("FILLED", "CANCELLED", "CANCELED", "REJECTED", "EXPIRED")
+                    or ("FILL" in event_type and data.get("is_full_fill", False))
+                )
+
+                if not is_terminal and rem_qty > 0:
+                    self._active_pending_orders[cid] = {
+                        "client_order_id": cid,
+                        "broker_order_no": data.get("broker_order_no", ""),
+                        "symbol": data.get("symbol", ""),
+                        "side": side,
+                        "status": order_state or event_type,
+                        "remaining_qty": rem_qty,
+                    }
+                elif is_terminal:
+                    self._active_pending_orders.pop(cid, None)
+
+            # Active positions tracking
+            pid = data.get("position_id") or data.get("symbol")
+            if event_type == "POSITION_OPEN" and pid:
+                self._active_open_positions[pid] = data
+            elif event_type == "POSITION_CLOSED" and pid:
+                self._active_open_positions.pop(pid, None)
+
+            # Cumulative event counters
             if event_type == "BUY_SIGNAL":
                 self.metrics["buy_signal_count"] += 1
             elif event_type == "BUY_APPROVED":
@@ -301,11 +460,7 @@ class LiveTelemetryExporter:
                 if event_type == "SELL_FILLED":
                     self.metrics["sell_fills"] += 1
 
-            elif event_type == "POSITION_OPEN":
-                self.metrics["open_positions"] += 1
             elif event_type == "POSITION_CLOSED":
-                self.metrics["open_positions"] = max(0, self.metrics["open_positions"] - 1)
-                # Track completed trades stats
                 ct = self._daily_stats["completed_trades"]
                 ct["count"] += 1
                 if "mfe" in data:
@@ -347,31 +502,39 @@ class LiveTelemetryExporter:
                 elif "CASH" in event_type:
                     self.metrics["cash_reject"] += 1
 
-                # Counterfactual blocked trade tracking
                 self._daily_stats["counterfactual"]["blocked_trade_count"] += 1
 
-            if "pending_orders" in data:
-                self.metrics["pending_orders"] = data["pending_orders"]
-            if "open_positions" in data:
-                self.metrics["open_positions"] = data["open_positions"]
+            # Update pending & position counts accurately
+            self.metrics["pending_orders"] = len(self._active_pending_orders)
+            self.metrics["pending_order_count"] = len(self._active_pending_orders)
+            self.metrics["pending_buy_orders"] = sum(
+                1 for o in self._active_pending_orders.values() if "BUY" in str(o.get("side", "")).upper()
+            )
+            self.metrics["pending_sell_orders"] = sum(
+                1 for o in self._active_pending_orders.values() if "SELL" in str(o.get("side", "")).upper()
+            )
+            self.metrics["open_positions"] = len(self._active_open_positions)
 
             # Set last event
             self.metrics["last_event"] = {
                 "event": event_type,
                 "symbol": data.get("symbol", ""),
-                "timestamp": data.get("timestamp", datetime.now(KST).isoformat())
+                "environment": data.get("environment", self.environment),
+                "timestamp": data.get("timestamp", datetime.now(KST).isoformat()),
             }
 
     def _write_latest_status(self):
         """Atomically writes latest_live_status.json."""
         os.makedirs(self.base_dir, exist_ok=True)
         status_path = os.path.join(self.base_dir, "latest_live_status.json")
-        tmp_path = os.path.join(self.base_dir, "latest_live_status.json.tmp")
+        unique_id = uuid.uuid4().hex[:6]
+        tmp_path = os.path.join(self.base_dir, f"latest_live_status.json.tmp.{unique_id}")
 
         with self._metrics_lock:
             payload = {
                 "updated_at": datetime.now(KST).isoformat(),
                 "trading_mode": self.trading_mode,
+                "environment": self.environment,
                 "market_status": self.market_status,
                 "process_status": self.process_status,
                 "buy_signal_count": self.metrics["buy_signal_count"],
@@ -383,6 +546,9 @@ class LiveTelemetryExporter:
                 "sell_fills": self.metrics["sell_fills"],
                 "open_positions": self.metrics["open_positions"],
                 "pending_orders": self.metrics["pending_orders"],
+                "pending_order_count": self.metrics["pending_order_count"],
+                "pending_buy_orders": self.metrics["pending_buy_orders"],
+                "pending_sell_orders": self.metrics["pending_sell_orders"],
                 "entry_quality_reject": self.metrics["entry_quality_reject"],
                 "profit_opportunity_reject": self.metrics["profit_opportunity_reject"],
                 "reentry_reject": self.metrics["reentry_reject"],
@@ -399,14 +565,38 @@ class LiveTelemetryExporter:
         try:
             with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(clean_payload, f, indent=2, ensure_ascii=False)
-            os.replace(tmp_path, status_path)
+            for attempt in range(5):
+                try:
+                    os.replace(tmp_path, status_path)
+                    break
+                except (PermissionError, OSError):
+                    if attempt < 4:
+                        time.sleep(0.02)
+                    else:
+                        raise
         except Exception as err:
             logger.error(f"Failed to write latest_live_status.json: {err}")
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
 
     def generate_daily_summary(self, date_str: Optional[str] = None) -> Dict[str, Any]:
         """Generates and writes live_summary.json for the specified date."""
         d_str = date_str or datetime.now(KST).strftime("%Y%m%d")
-        date_dir = os.path.join(self.base_dir, d_str)
+        # Route TEST environment summaries to fixtures directory if in live_telemetry dir
+        is_live_telemetry_dir = (
+            self.base_dir.endswith("data/live_telemetry")
+            or self.base_dir.endswith("data\\live_telemetry")
+            or os.path.basename(self.base_dir) == "live_telemetry"
+        )
+        if self.environment == "TEST" and is_live_telemetry_dir:
+            date_dir = os.path.join(self.base_dir, "fixtures", d_str)
+        else:
+            date_dir = os.path.join(self.base_dir, d_str)
+
         os.makedirs(date_dir, exist_ok=True)
         summary_path = os.path.join(date_dir, "live_summary.json")
         tmp_path = os.path.join(date_dir, "live_summary.json.tmp")
@@ -428,6 +618,7 @@ class LiveTelemetryExporter:
                 "date": d_str,
                 "generated_at": datetime.now(KST).isoformat(),
                 "trading_mode": self.trading_mode,
+                "environment": self.environment,
                 "entry_quality": {
                     "buy_approved": self.metrics["buy_approved"],
                     "orders_sent": self.metrics["buy_orders_sent"],
@@ -481,22 +672,28 @@ class LiveTelemetryExporter:
 
     def flush(self):
         """Processes all pending events synchronously."""
+        try:
+            self.queue.join()
+        except Exception:
+            pass
         while not self.queue.empty():
             try:
                 item = self.queue.get_nowait()
-                self._process_item(item)
+                with self._process_lock:
+                    self._process_item(item)
                 self.queue.task_done()
             except queue.Empty:
                 break
             except Exception as e:
                 logger.error(f"Error during flush: {e}")
-        self._write_latest_status()
+        with self._process_lock:
+            self._write_latest_status()
 
     # -------------------------------------------------------------------------
     # Convenience Emitter Methods
     # -------------------------------------------------------------------------
 
-    def record_decision(self, record_or_dict: Any, decision_type: str = "BUY_APPROVED") -> Optional[str]:
+    def record_decision(self, record_or_dict: Any, decision_type: str = "BUY_APPROVED", environment: Optional[str] = None) -> Optional[str]:
         """Records a DecisionTrace record."""
         if hasattr(record_or_dict, "to_dict"):
             d = record_or_dict.to_dict()
@@ -509,9 +706,13 @@ class LiveTelemetryExporter:
         if d.get("decision", "").upper() in ("REJECTED", "NO_TRADE") or "REJECT" in decision_type:
             event_type = "NO_TRADE"
 
-        return self.emit_event(event_type, d, is_critical=False)
+        env = environment or ("LIVE" if str(d.get("trading_mode", "")).lower() == "live" else self.environment)
+        d["environment"] = env
+        d["source"] = "UNIT_TEST" if env == "TEST" else ("LIVE_TRADER" if env == "LIVE" else "MOCK_TRADER")
 
-    def record_order_event(self, stage: str, order: Any, extra_info: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        return self.emit_event(event_type, d, is_critical=False, environment=env)
+
+    def record_order_event(self, stage: str, order: Any, extra_info: Optional[Dict[str, Any]] = None, environment: Optional[str] = None) -> Optional[str]:
         """
         Records order state machine transitions:
         ORDER_CREATED, ORDER_SENT, ORDER_ACK, PENDING, CANCELLED, REJECTED
@@ -520,7 +721,17 @@ class LiveTelemetryExporter:
         prefix = "BUY_" if "BUY" in side_val else "SELL_"
         event_type = f"{prefix}{stage.upper()}" if not stage.upper().startswith(("BUY_", "SELL_")) else stage.upper()
 
+        env = environment or self.environment
+        if env == "TEST":
+            src = "UNIT_TEST"
+        elif "ACK" in event_type or "REJECT" in event_type:
+            src = "BROKER"
+        else:
+            src = self.default_source
+
         payload = {
+            "environment": env,
+            "source": src,
             "symbol": getattr(order, "iem_cd", ""),
             "name": getattr(order, "name", ""),
             "client_order_id": getattr(order, "client_order_id", ""),
@@ -538,9 +749,9 @@ class LiveTelemetryExporter:
             payload.update(extra_info)
 
         is_critical = "REJECT" in event_type
-        return self.emit_event(event_type, payload, is_critical=is_critical)
+        return self.emit_event(event_type, payload, is_critical=is_critical, environment=env)
 
-    def record_fill(self, order: Any, fill_qty: int, fill_price: float, is_full_fill: bool) -> Optional[str]:
+    def record_fill(self, order: Any, fill_qty: int, fill_price: float, is_full_fill: bool, environment: Optional[str] = None) -> Optional[str]:
         """
         Records actual broker execution:
         BUY_PARTIAL_FILL / BUY_FILLED / SELL_PARTIAL_FILL / SELL_FILLED
@@ -550,7 +761,11 @@ class LiveTelemetryExporter:
         fill_type = "FILLED" if is_full_fill else "PARTIAL_FILL"
         event_type = f"{prefix}{fill_type}"
 
+        env = environment or self.environment
+        src = "UNIT_TEST" if env == "TEST" else "BROKER"
         payload = {
+            "environment": env,
+            "source": src,
             "symbol": getattr(order, "iem_cd", ""),
             "name": getattr(order, "name", ""),
             "client_order_id": getattr(order, "client_order_id", ""),
@@ -562,12 +777,16 @@ class LiveTelemetryExporter:
             "remaining_qty": getattr(order, "remaining_qty", 0),
             "is_full_fill": is_full_fill,
         }
-        # FILLS are critical events that trigger fast git sync!
-        return self.emit_event(event_type, payload, is_critical=True)
+        return self.emit_event(event_type, payload, is_critical=True, environment=env)
 
-    def record_position_event(self, event_name: str, pos: Any, extra_info: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def record_position_event(self, event_name: str, pos: Any, extra_info: Optional[Dict[str, Any]] = None, environment: Optional[str] = None) -> Optional[str]:
         """Records POSITION_OPEN, PARTIAL_EXITED, POSITION_CLOSED."""
+        env = environment or ("LIVE" if str(getattr(pos, "trading_mode", "")).upper() == "LIVE" else self.environment)
+        src = "UNIT_TEST" if env == "TEST" else ("LIVE_TRADER" if env == "LIVE" else "MOCK_TRADER")
         payload = {
+            "environment": env,
+            "source": src,
+            "position_id": getattr(pos, "position_id", ""),
             "symbol": getattr(pos, "iem_cd", ""),
             "name": getattr(pos, "name", ""),
             "strategy": getattr(pos, "strategy_id", ""),
@@ -579,28 +798,36 @@ class LiveTelemetryExporter:
         }
         if extra_info:
             payload.update(extra_info)
-        return self.emit_event(event_name, payload, is_critical=False)
+        return self.emit_event(event_name, payload, is_critical=False, environment=env)
 
-    def record_rejection(self, gate_name: str, symbol: str, reason: str, details: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def record_rejection(self, gate_name: str, symbol: str, reason: str, details: Optional[Dict[str, Any]] = None, environment: Optional[str] = None) -> Optional[str]:
         """Records gate and pre-order rejection events."""
         event_type = f"{gate_name.upper()}_REJECT" if not gate_name.upper().endswith("_REJECT") else gate_name.upper()
+        env = environment or self.environment
+        src = "UNIT_TEST" if env == "TEST" else self.default_source
         payload = {
+            "environment": env,
+            "source": src,
             "symbol": symbol,
             "gate": gate_name,
             "reason": reason,
         }
         if details:
             payload.update(details)
-        return self.emit_event(event_type, payload, is_critical=False)
+        return self.emit_event(event_type, payload, is_critical=False, environment=env)
 
-    def record_error(self, error_type: str, message: str, details: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    def record_error(self, error_type: str, message: str, details: Optional[Dict[str, Any]] = None, environment: Optional[str] = None) -> Optional[str]:
         """Records error and reconciliation mismatch events."""
         event_type = error_type.upper()
+        env = environment or self.environment
+        src = "UNIT_TEST" if env == "TEST" else "SYSTEM"
         payload = {
+            "environment": env,
+            "source": src,
             "error_type": error_type,
             "message": message,
         }
         if details:
             payload.update(details)
         is_critical = event_type in CRITICAL_EVENTS or "ERROR" in event_type or "MISMATCH" in event_type
-        return self.emit_event(event_type, payload, is_critical=is_critical)
+        return self.emit_event(event_type, payload, is_critical=is_critical, environment=env)
